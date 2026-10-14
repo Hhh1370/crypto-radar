@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#6366f1">
+  <title>رادار کریپتو</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet">
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <h1>🎯 رادار کریپتو</h1>
+      <p class="subtitle">تحلیل تکنیکال + بنیادی + اخبار</p>
+    </div>
+    <button id="refresh-btn" onclick="loadData(true)">🔄 بروزرسانی</button>
+  </header>
+
+  <main id="main">
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <p>در حال تحلیل بازار...</p>
+      <p class="hint">بار اول ۳۰-۶۰ ثانیه طول می‌کشه</p>
+    </div>
+    <div id="cards" class="cards"></div>
+    <div id="error" class="error hidden"></div>
+  </main>
+
+  <footer>
+    <p>⚠️ این ابزار جنبه آموزشی دارد و توصیه مالی نیست</p>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

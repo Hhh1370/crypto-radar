@@ -1,0 +1,20 @@
+{
+  "name": "رادار کریپتو",
+  "short_name": "رادار",
+  "description": "تحلیل تکنیکال، بنیادی و اخبار ارزهای دیجیتال",
+  "start_url": "/app",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0a0e1a",
+  "theme_color": "#6366f1",
+  "lang": "fa",
+  "dir": "rtl",
+  "icons": [
+    {
+      "src": "/static/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
