@@ -1,6 +1,6 @@
 const WATCHLIST = ["bitcoin", "ethereum", "solana"];
 
-async function loadData(forceRefresh = false) {
+async function loadData() {
   const loading = document.getElementById("loading");
   const cards = document.getElementById("cards");
   const error = document.getElementById("error");
@@ -10,25 +10,31 @@ async function loadData(forceRefresh = false) {
   cards.innerHTML = "";
   error.classList.add("hidden");
   btn.disabled = true;
-  btn.textContent = "⏳ در حال تحلیل...";
+  btn.textContent = "⏳ در حال بارگذاری...";
 
   try {
-    const results = [];
+    const r = await fetch("/signals/all");
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
 
-    for (const coinId of WATCHLIST) {
-      try {
-        const r = await fetch(`/signal/${coinId}`);
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        const data = await r.json();
-        results.push(data);
-        renderCard(data);
-      } catch (e) {
-        console.error(`Error for ${coinId}:`, e);
-      }
+    const data = await r.json();
+
+    if (data.status === "loading" || !data.signals || data.signals.length === 0) {
+      loading.innerHTML = `
+        <div class="spinner"></div>
+        <p>در حال آماده‌سازی داده‌ها...</p>
+        <p class="hint">این ممکنه ۳۰-۶۰ ثانیه طول بکشه (فقط بار اول)</p>
+      `;
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = "🔄 بروزرسانی";
+        loadData();
+      }, 15000);
+      return;
     }
 
-    if (results.length === 0) {
-      throw new Error("هیچ داده‌ای دریافت نشد");
+    const results = data.signals;
+    for (const item of results) {
+      renderCard(item);
     }
 
     loading.classList.add("hidden");
@@ -78,19 +84,19 @@ function renderCard(data) {
     <div class="card-header">
       <div class="coin-info">
         <div>
-          <div class="coin-symbol">${data.symbol}</div>
-          <div class="coin-name">${data.name}</div>
+          <div class="coin-symbol">${data.symbol || ""}</div>
+          <div class="coin-name">${data.name || ""}</div>
         </div>
       </div>
-      <div class="score-badge ${scoreClass(data.combined_signal)}">
-        <div class="num">${data.combined_signal}</div>
+      <div class="score-badge ${scoreClass(data.combined_signal || 0)}">
+        <div class="num">${data.combined_signal || 0}</div>
         <div class="label">امتیاز</div>
       </div>
     </div>
 
     <div class="price-row">
-      <div class="price">${formatPrice(data.current_price)}</div>
-      <div class="verdict">${data.verdict}</div>
+      <div class="price">${formatPrice(data.current_price || 0)}</div>
+      <div class="verdict">${data.verdict || ""}</div>
     </div>
 
     <div class="section">
@@ -140,7 +146,7 @@ function renderCard(data) {
 
     ${topNews.length > 0 ? `
     <div class="section">
-      <div class="section-title">📰 اخبار (${news.sources_count} منبع، ${news.news_count} خبر)</div>
+      <div class="section-title">📰 اخبار (${news.sources_count || 0} منبع، ${news.news_count || 0} خبر)</div>
       <div class="news-list">
         ${topNews.map(n => `
           <a class="news-item" href="${n.link}" target="_blank" rel="noopener">
@@ -156,5 +162,4 @@ function renderCard(data) {
   cards.appendChild(card);
 }
 
-// بارگذاری خودکار در شروع
 window.addEventListener("DOMContentLoaded", () => loadData());

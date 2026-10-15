@@ -14,6 +14,7 @@ from fundamental import categorize_sectors
 from radar import scan_market
 from news import fetch_all_news, get_news_by_coin, get_trending_coins
 from coins_map import COINS
+from background import start_background_updater
 
 app = FastAPI(title="Crypto Radar")
 
@@ -23,6 +24,14 @@ COINPAPRIKA = "https://api.coinpaprika.com/v1"
 _signals_cache = {"data": None, "timestamp": 0}
 _signals_lock = Lock()
 SIGNALS_CACHE_TTL = 600  # 10 دقیقه
+
+
+@app.on_event("startup")
+def startup_event():
+    """شروع updater پس‌زمینه"""
+    watchlist = ["bitcoin", "ethereum", "solana"]
+    start_background_updater(_build_signal, watchlist, interval_seconds=600)
+    print("[STARTUP] Background updater started.")
 
 
 @app.get("/")
@@ -582,33 +591,27 @@ def get_signal(coin_id: str, hours: int = 48):
 
 @app.get("/signals/all")
 def get_all_signals(hours: int = 48, force: bool = False):
-    """گرفتن سیگنال ۳ ارز با کش ۱۰ دقیقه‌ای"""
+    """فقط کش رو برمی‌گردونه - پاسخ فوری"""
     global _signals_cache
 
-    # چک کش
-    if not force and _signals_cache["data"]:
-        age = time.time() - _signals_cache["timestamp"]
-        if age < SIGNALS_CACHE_TTL:
-            return {
-                "count": len(_signals_cache["data"]),
-                "signals": _signals_cache["data"],
-                "cached": True,
-                "age_seconds": int(age),
-            }
+    data = _signals_cache.get("data")
 
-    # محاسبه‌ی جدید
-    watchlist = ["bitcoin", "ethereum", "solana"]
+    if data:
+        age = int(time.time() - _signals_cache["timestamp"])
+        return {
+            "count": len(data),
+            "signals": data,
+            "cached": True,
+            "age_seconds": age,
+        }
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        results = list(executor.map(lambda c: _build_signal(c, hours=hours), watchlist))
-
-    results.sort(key=lambda x: x.get("combined_signal", 0), reverse=True)
-
-    with _signals_lock:
-        _signals_cache["data"] = results
-        _signals_cache["timestamp"] = time.time()
-
-    return {"count": len(results), "signals": results, "cached": False}
+    return {
+        "count": 0,
+        "signals": [],
+        "cached": False,
+        "status": "loading",
+        "message": "داده‌ها در حال محاسبه هستند. لطفاً ۳۰ ثانیه دیگر دوباره تلاش کنید.",
+    }
 
 
 # ---------- UI ----------
