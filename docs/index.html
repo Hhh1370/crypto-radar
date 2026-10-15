@@ -22,9 +22,10 @@
       <h1>🎯 رادار کریپتو</h1>
       <p class="subtitle">تحلیل تکنیکال + بنیادی + اخبار</p>
     </div>
-    <button id="refresh-btn" onclick="loadData(true)">🔄 بروزرسانی</button>
+    <button id="refresh-btn" onclick="loadData()">🔄 بروزرسانی</button>
   </header>
 
+  <section class="settings-panel"><details><summary>⚙️ تنظیم اتصال رایگان Cloudflare</summary><form id="api-settings"><label for="api-base">آدرس Worker (پس از Deploy از Cloudflare کپی کن)</label><input id="api-base" type="url" inputmode="url" placeholder="https://crypto-radar-public-data.username.workers.dev" autocomplete="url"><button type="submit">ذخیره و آزمایش اتصال</button><p id="api-status" class="hint">آدرس فقط در همین مرورگر ذخیره می‌شود؛ کلید API لازم نیست.</p></form></details></section>
   <main id="main">
     <div id="loading" class="loading">
       <div class="spinner"></div>
@@ -41,6 +42,7 @@
 
   <script src="./indicators.js"></script>
   <script src="./radar.js"></script>
+  <script src="./pro-radar.js"></script>
   <script src="./app.js"></script>
 </body>
 </html>
