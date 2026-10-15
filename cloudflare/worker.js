@@ -92,6 +92,45 @@ async function getCandles(url) {
     candles: raw.map(k => ({ time: k[0], open: Number(k[1]), high: Number(k[2]), low: Number(k[3]), close: Number(k[4]), volume: Number(k[5]), closeTime: k[6], quoteVolume: Number(k[7]), trades: Number(k[8]) })),
   });
 }
+async function searchCoins(query) {
+  const q = String(query || "").trim().slice(0, 80);
+  if (q.length < 1) return { query: q, results: [], source: "CoinGecko public search", updatedAt: new Date().toISOString() };
+  const response = await cachedFetch("https://api.coingecko.com/api/v3/search?query=" + encodeURIComponent(q), 300);
+  const data = await response.json();
+  const results = (data.coins || []).slice(0, 20).map(x => ({
+    id: x.id, name: x.name, symbol: String(x.symbol || "").toUpperCase(),
+    marketCapRank: x.market_cap_rank == null ? null : Number(x.market_cap_rank),
+    thumb: x.thumb || null, large: x.large || null,
+    source: "CoinGecko public search"
+  }));
+  return { query: q, count: results.length, results, source: "CoinGecko public search (free endpoint; rate limits may apply)", updatedAt: new Date().toISOString() };
+}
+async function getCoinOverview(id) {
+  const coinId = String(id || "").trim().slice(0, 100);
+  if (!/^[a-z0-9-]+$/i.test(coinId)) throw new Error("شناسه کوین نامعتبر است");
+  const response = await cachedFetch("https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=" + encodeURIComponent(coinId) + "&price_change_percentage=24h,7d,30d", 300);
+  const rows = await response.json();
+  const x = Array.isArray(rows) ? rows[0] : null;
+  if (!x) return { id: coinId, available: false, source: "CoinGecko public markets", updatedAt: new Date().toISOString() };
+  return {
+    id: x.id, name: x.name, symbol: String(x.symbol || "").toUpperCase(),
+    price: x.current_price == null ? null : Number(x.current_price),
+    marketCap: x.market_cap == null ? null : Number(x.market_cap),
+    marketCapRank: x.market_cap_rank == null ? null : Number(x.market_cap_rank),
+    fullyDilutedValuation: x.fully_diluted_valuation == null ? null : Number(x.fully_diluted_valuation),
+    totalVolume24h: x.total_volume == null ? null : Number(x.total_volume),
+    high24h: x.high_24h == null ? null : Number(x.high_24h), low24h: x.low_24h == null ? null : Number(x.low_24h),
+    change24h: x.price_change_percentage_24h == null ? null : Number(x.price_change_percentage_24h),
+    change7d: x.price_change_percentage_7d_in_currency == null ? null : Number(x.price_change_percentage_7d_in_currency),
+    change30d: x.price_change_percentage_30d_in_currency == null ? null : Number(x.price_change_percentage_30d_in_currency),
+    circulatingSupply: x.circulating_supply == null ? null : Number(x.circulating_supply),
+    totalSupply: x.total_supply == null ? null : Number(x.total_supply),
+    maxSupply: x.max_supply == null ? null : Number(x.max_supply),
+    ath: x.ath == null ? null : Number(x.ath), athChangePercentage: x.ath_change_percentage == null ? null : Number(x.ath_change_percentage),
+    lastUpdated: x.last_updated || null, source: "CoinGecko public markets (free endpoint; rate limits may apply)",
+    updatedAt: new Date().toISOString(), available: true
+  };
+}
 async function getDefiProtocols() {
   const response = await cachedFetch("https://api.llama.fi/protocols", 1800);
   const rows = await response.json();
@@ -186,6 +225,8 @@ async function getDerivatives(url, env) {
     const fundingRows = Array.isArray(fundingData.data) ? fundingData.data : [];
     const totalOi = oiRows.find(x => x.exchange === "All") || null;
     const rates = fundingRows.flatMap(x => (x.stablecoin_margin_list || []).map(r => ({ ...r, funding_rate: Number(r.funding_rate) / 100 }))).filter(x => Number.isFinite(Number(x.funding_rate)));
+    const sortedRates = rates.map(x => Number(x.funding_rate)).sort((a,b) => a-b);
+    const medianFunding = sortedRates.length ? sortedRates[Math.floor(sortedRates.length / 2)] : null;
     return json({ symbol, source: "CoinGlass", updatedAt: new Date().toISOString(), available: Boolean(totalOi || rates.length), openInterestUsd: totalOi ? Number(totalOi.open_interest_usd) : null, fundingRate: medianFunding, funding: rates.slice(0, 12), errors: [oiData._error, fundingData._error].filter(Boolean), note: "پوشش و محدودیت درخواست تابع پلن CoinGlass است." });
   }
   const root = "https://fapi.binance.com";
@@ -241,8 +282,10 @@ export default {
       if (url.pathname === "/api/candles") return await getCandles(url);
       if (url.pathname === "/api/news") return json(await getNews());
       if (url.pathname === "/api/protocols") return json(await getDefiProtocols());
+      if (url.pathname === "/api/search") return json(await searchCoins(url.searchParams.get("q")));
+      if (url.pathname === "/api/coin") return json(await getCoinOverview(url.searchParams.get("id")));
       if (url.pathname === "/api/derivatives") return await getDerivatives(url, env);
-      return json({ error: "Not found", routes: ["/api/health", "/api/market", "/api/candles", "/api/news", "/api/derivatives", "/api/protocols"] }, 404);
+      return json({ error: "Not found", routes: ["/api/health", "/api/market", "/api/candles", "/api/news", "/api/derivatives", "/api/protocols", "/api/search", "/api/coin"] }, 404);
     } catch (error) {
       return json({ error: error && error.message ? error.message : "upstream unavailable", staleDataAvailable: false }, 502);
     }
