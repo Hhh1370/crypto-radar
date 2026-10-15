@@ -92,7 +92,8 @@
        const note=document.createElement("p");note.className="hint";note.textContent="کندل‌های تکنیکال از بایننس در دسترس نشدند: "+err.message;results.appendChild(note);status.textContent="اطلاعات رایگان بازار/بنیادی نمایش داده شد؛ تکنیکال در دسترس نیست.";return;
      }
      const candles=x=>(x.candles||[]).map(k=>({time:k.time,open:k.open,high:k.high,low:k.low,close:k.close,volume:k.volume}));
-     if(request!==requestNo)return;\n     const d=candles(daily),w=candles(weekly),m=candles(monthly),tech=multi(d,w,m);
+     if(request!==requestNo)return;
+     const d=candles(daily),w=candles(weekly),m=candles(monthly),tech=multi(d,w,m);
      const matchedNews=relevant.map(n=>({...n,summary:n.summary||""}));
      let ns=50;for(const n of matchedNews){if(/hack|exploit|lawsuit|delist|fraud|breach|outage|investigation/i.test(n.title))ns-=9;else if(/launch|upgrade|partnership|adoption|revenue|mainnet|funding|approval|integration/i.test(n.title))ns+=4;}
      ns=Math.max(0,Math.min(100,ns));
