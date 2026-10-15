@@ -1,5 +1,4 @@
-const WATCHLIST = ["bitcoin", "ethereum", "solana"];
-const API_BASE = "https://crypto-radar-rid0.onrender.com";
+// ============ APP (UI + Logic) ============
 
 async function loadData() {
   const loading = document.getElementById("loading");
@@ -14,26 +13,18 @@ async function loadData() {
   btn.textContent = "⏳ در حال بارگذاری...";
 
   try {
-    const r = await fetch(`${API_BASE}/signals/all`);
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    loading.innerHTML = `
+      <div class="spinner"></div>
+      <p>در حال دریافت داده از Binance...</p>
+      <p class="hint">اخبار از ۵ منبع در حال خواندن است</p>
+    `;
 
-    const data = await r.json();
+    const results = await loadAllSignals();
 
-    if (data.status === "loading" || !data.signals || data.signals.length === 0) {
-      loading.innerHTML = `
-        <div class="spinner"></div>
-        <p>در حال آماده‌سازی داده‌ها...</p>
-        <p class="hint">این ممکنه ۳۰-۶۰ ثانیه طول بکشه (فقط بار اول)</p>
-      `;
-      setTimeout(() => {
-        btn.disabled = false;
-        btn.textContent = "🔄 بروزرسانی";
-        loadData();
-      }, 15000);
-      return;
+    if (!results || results.length === 0) {
+      throw new Error("داده‌ای دریافت نشد");
     }
 
-    const results = data.signals;
     for (const item of results) {
       renderCard(item);
     }
