@@ -29,3 +29,11 @@ Check JavaScript syntax with `node --check cloudflare/worker.js`, `node --check 
 
 ## Why this is staged
 The original static page referenced a missing `loadAllSignals` function and did not have a configurable API endpoint, so the page could fail before producing results. This upgrade adds the missing browser scanner and an explicit Worker configuration. A professional all-market radar still needs persistent historical data, robust token identity resolution, news deduplication and source reliability, tokenomics/unlock data, and out-of-sample score validation before it should be called complete.
+
+
+## Coin search and free fundamentals
+- The interface includes on-demand coin search by name/symbol using CoinGecko public search and public market endpoints; these are free to access but rate-limited and may be unavailable from some networks.
+- Selected-coin review shows price, market-cap rank, market capitalization, FDV, 24h volume, 24h/7d/30d performance, circulating/total/max supply, ATH distance, RSS headlines, multi-timeframe technical analysis where Binance spot USDT candles exist, and public Binance Futures context where supported.
+- Free sources currently used: CoinGecko public endpoints (search/market metrics), DeFiLlama public protocol TVL endpoint, public Binance spot/futures endpoints, and public RSS feeds from CoinDesk, Cointelegraph, Decrypt, CryptoSlate, and ArzDigital. No paid API is required for default operation.
+- Fundamental score is deliberately omitted when verified data is insufficient. A DeFiLlama match by ticker alone is shown only as tentative context and is not scored. The app does not yet have reliable token unlock schedules, protocol revenue, audited security history, or developer-activity coverage for every asset; missing evidence is not interpreted as a positive signal.
+- The selected-coin view is an on-demand research panel, not an automated trading execution system. Symbol-to-exchange matching is ticker-based and should be treated as a possible mismatch until a canonical contract/address mapping is added.
