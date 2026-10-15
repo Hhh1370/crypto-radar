@@ -21,6 +21,7 @@ jobs:
           node --check docs/radar.js
           node --check docs/pro-radar.js
           node --check docs/app.js
+          node --check docs/coin-search.js
       - name: Install Python dependencies
         run: pip install -r requirements.txt
       - name: Run technical engine tests
