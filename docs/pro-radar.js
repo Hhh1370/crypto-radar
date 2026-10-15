@@ -51,7 +51,15 @@ async function loadAllSignals(){
    derivatives:{score:ds.score,source:deriv?.source||"Binance public futures",available:Boolean(deriv?.available),openInterestUsdApprox:deriv?.openInterestUsdApprox??null,openInterestChange24hPct:deriv?.openInterestChange24hPct??null,fundingRate:deriv?.fundingRate??null,globalLongShortRatio:deriv?.globalLongShortRatio??null,longAccountPct:deriv?.longAccountPct??null,takerBuySellRatio:deriv?.takerBuySellRatio??null,signals:ds.signals,errors:deriv?.errors||[],note:deriv?.note||"داده مشتقات فقط برای ۱۵ بازار اول از نظر حجم بررسی می‌شود."}},
    data_quality:{dailyCandles:daily.length,weeklyCandles:weekly.length,monthlyCandles:monthly.length,market_updated:md.updatedAt,news_updated:nd.updatedAt}};
  });
- let valid=out.filter(x=>x&&!x.error&&x.current_price>0).sort((a,b)=>b.combined_signal-a.combined_signal);
- if(!valid.length)throw Error("هیچ دارایی با داده معتبر تحلیل نشد.");
- return valid.map((x,i)=>({...x,rank:i+1,watch_status:i<5?"اصلی":i<10?"مراقبت":"اسکن‌شده"}));
+ let valid=out.filter(x=>x&&!x.error&&x.current_price>0);
+ if(!valid.length)throw Error("در این دسته هیچ دارایی با داده معتبر تحلیل نشد.");
+ const now=Date.now(),cacheKey="cryptoRadarMarketScanCache";let cache={};
+ try{cache=JSON.parse(localStorage.getItem(cacheKey)||"{}");if(!cache||typeof cache!=="object"||Array.isArray(cache))cache={};}catch(e){cache={};}
+ const universe=new Set(allMarkets.map(x=>x.symbol));
+ for(const old of Object.keys(cache))if(!universe.has(old))delete cache[old];
+ for(const item of valid){item.scanTimestamp=now;cache[item.marketSymbol]=item;}
+ try{localStorage.setItem(cacheKey,JSON.stringify(cache));}catch(e){}
+ const merged=Object.values(cache).filter(x=>x&&x.current_price>0&&universe.has(x.marketSymbol));
+ merged.sort((a,b)=>b.combined_signal-a.combined_signal);
+ return merged.map((x,i)=>({...x,rank:i+1,scanAgeHours:Math.max(0,(now-(x.scanTimestamp||now))/3600000),watch_status:i<5?"اصلی":i<10?"مراقبت":"اسکن‌شده",scanProgress:{scanned:merged.length,total:allMarkets.length,batchSize,offset}}));
 }
