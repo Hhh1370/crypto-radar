@@ -18,8 +18,8 @@ function barColor(score){if(score>=70)return"#10b981";if(score>=50)return"#f59e0
 function formatPrice(p){if(p>=1000)return"$"+p.toLocaleString("en-US",{maximumFractionDigits:2});if(p>=1)return"$"+p.toFixed(3);return"$"+p.toPrecision(5);}
 function escapeHTML(value){return String(value==null?"":value).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
 function safeURL(value){try{const u=new URL(String(value||""));if(u.protocol==="https:"||u.protocol==="http:")return u.href;}catch(e){}return "#";}
-function renderCard(data){
- const cards=document.getElementById("cards"),bd=data.breakdown||{},tech=bd.technical||{},fund=bd.fundamental||{},news=bd.news||{},deriv=bd.derivatives||{},multi=tech.multi||{},protocol=fund.protocol||null;
+function renderCard(data,targetId){
+ const cards=document.getElementById(targetId||"cards"),bd=data.breakdown||{},tech=bd.technical||{},fund=bd.fundamental||{},news=bd.news||{},deriv=bd.derivatives||{},multi=tech.multi||{},protocol=fund.protocol||null;
  const card=document.createElement("article");card.className="card";
  const priceChange=Number(data.change24h||0),trend=multi.conflict?"⚠️ تضاد تایم‌فریم":data.verdict||"";
  const frameRows=Object.entries(multi.frames||{}).map(([k,f])=>({name:({monthly:"ماهانه",weekly:"هفتگی",daily:"روزانه"})[k]||k,f})).filter(x=>x.f.available);
