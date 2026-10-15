@@ -12,7 +12,7 @@ function frame(c,name){let a=c.map(x=>x.close);if(c.length<60)return{name,availa
 function multi(c,weekly,monthly){let f={monthly:frame(monthly,"ماهانه"),weekly:frame(weekly,"هفتگی"),daily:frame(c,"روزانه")},w={monthly:.4,weekly:.35,daily:.25},sum=0,den=0;for(let k in w)if(f[k].available){sum+=f[k].score*w[k];den+=w[k];}let ss=Object.values(f).filter(x=>x.available).map(x=>x.score);return{score:den?Math.round(sum/den*10)/10:null,frames:f,conflict:ss.length>1&&Math.max(...ss)-Math.min(...ss)>=35};}
 const sectorRules=[["AI",/artificial intelligence|ai agent|machine learning|gpu|bittensor|fetch\.ai/i],["DeFi",/defi|decentralized finance|lending|staking|uniswap|aave/i],["Energy / DePIN",/energy|renewable|solar|depin|helium/i],["Cybersecurity / Privacy",/cybersecurity|privacy|zero knowledge|security/i],["Storage / Data",/storage|filecoin|arweave|data availability/i],["Health",/health|medical|biotech/i],["Gaming",/gaming|gamefi|play to earn|immutable/i],["RWA",/real world asset|tokenized treasury|tokenization/i],["Aerospace / Defense",/aerospace|satellite|defense|military/i]];
 function newsScore(items,coin){let text=coin.base+" "+coin.symbol,matched=items.filter(n=>(n.title+" "+n.summary).toLowerCase().includes(text.toLowerCase()));let s=50;for(let n of matched.slice(0,15)){if(/hack|exploit|lawsuit|delist|fraud|breach|outage/i.test(n.title))s-=10;else if(/launch|upgrade|partnership|adoption|revenue|mainnet|funding|approval/i.test(n.title))s+=5;}return{score:Math.max(0,Math.min(100,s)),matches:matched.slice(0,4),count:matched.length};}
-async function pool(a,n,fn){let out=Array(a.length),next=0;await Promise.all(Array.from({length:Math.min(n,a.length)},async()=>{while(true){let i=next++;if(i>=a.length)return;try{out[i]=await fn(a[i]);}catch(e){out[i]={error:e.message};}}}));return out;}
+async function pool(a,n,fn){let out=Array(a.length),next=0;await Promise.all(Array.from({length:Math.min(n,a.length)},async()=>{while(true){let i=next++;if(i>=a.length)return;try{out[i]=await fn(a[i],i);}catch(e){out[i]={error:e.message};}}}));return out;}
 function scoreDerivatives(d, priceChange){
  if(!d||!d.available)return {score:null,signals:["داده مشتقات در دسترس نیست"]};
  let score=50,signals=[];
@@ -36,7 +36,7 @@ async function loadAllSignals(){
   const daily=map(d1),weekly=map(w1),monthly=map(m1),t=multi(daily,weekly,monthly),n=newsScore(news,coin);
   const txt=(coin.base+" "+n.matches.map(x=>x.title+" "+x.summary).join(" ")).toLowerCase();
   const sectors=sectorRules.filter(x=>x[1].test(txt)).map(x=>x[0]),fs=Math.min(100,25+sectors.length*10),ts=t.score||0;
-  const ds=scoreDerivatives(deriv,coin.change24h),hasDeriv=ds.score!==null;\n  const combined=Math.round((ts*(hasDeriv?.50:.55)+fs*.15+n.score*(hasDeriv?.25:.30)+(hasDeriv?ds.score*.10:0))*10)/10;
+  const ds=scoreDerivatives(deriv,coin.change24h),hasDeriv=ds.score!==null;\n  const combined=Math.round((ts*(hasDeriv ? .50 : .55)+fs*.15+n.score*(hasDeriv ? .25 : .30)+(hasDeriv?ds.score*.10:0))*10)/10;
   return {symbol:coin.base,name:coin.base,marketSymbol:coin.symbol,current_price:coin.price,change24h:coin.change24h,volume24h:coin.quoteVolume24h,combined_signal:combined,verdict:t.conflict?"تضاد تایم‌فریم؛ احتیاط":combined>=70?"بررسی اولویت‌دار":combined>=55?"تحت مراقبت":"اولویت پایین",
    breakdown:{technical:{score:ts,signals:Object.entries(t.frames).filter(x=>x[1].available).flatMap(x=>[x[0]+": "+x[1].score,...x[1].signals.slice(0,2)]),multi:t},
    fundamental:{score:fs,sectors,signals:["امتیاز حوزه مقدماتی است و جایگزین بررسی توکنومیک و صورت‌های مالی نیست."]},
