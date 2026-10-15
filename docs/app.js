@@ -15,7 +15,9 @@ async function loadData() {
 }
 function scoreClass(score){if(score>=70)return"score-strong";if(score>=50)return"score-medium";return"score-weak";}
 function barColor(score){if(score>=70)return"#10b981";if(score>=50)return"#f59e0b";return"#ef4444";}
-function formatPrice(p){if(p>=1000)return"$"+p.toLocaleString("en-US",{maximumFractionDigits:2});if(p>=1)return"$"+p.toFixed(3);return"$"+p.toPrecision(5);}\nfunction escapeHTML(v){return String(v??"").replace(/[&<>"\x27]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",\x22:"&quot;",\x27:"&#39;"}[c]));}\nfunction safeURL(v){try{const u=new URL(String(v||""));return u.protocol==="https:"||u.protocol==="http:"?u.href:"#";}catch(e){return "#";}}
+function formatPrice(p){if(p>=1000)return"$"+p.toLocaleString("en-US",{maximumFractionDigits:2});if(p>=1)return"$"+p.toFixed(3);return"$"+p.toPrecision(5);}
+function escapeHTML(value){return String(value==null?"":value).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");}
+function safeURL(value){try{const u=new URL(String(value||""));if(u.protocol==="https:"||u.protocol==="http:")return u.href;}catch(e){}return "#";}
 function renderCard(data){
  const cards=document.getElementById("cards"),bd=data.breakdown||{},tech=bd.technical||{},fund=bd.fundamental||{},news=bd.news||{},deriv=bd.derivatives||{},multi=tech.multi||{},protocol=fund.protocol||null;
  const card=document.createElement("article");card.className="card";
