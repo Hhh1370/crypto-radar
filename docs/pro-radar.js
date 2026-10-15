@@ -13,12 +13,21 @@ function multi(c,weekly,monthly){let f={monthly:frame(monthly,"ماهانه"),we
 const sectorRules=[["AI",/artificial intelligence|ai agent|machine learning|gpu|bittensor|fetch\.ai/i],["DeFi",/defi|decentralized finance|lending|staking|uniswap|aave/i],["Energy / DePIN",/energy|renewable|solar|depin|helium/i],["Cybersecurity / Privacy",/cybersecurity|privacy|zero knowledge|security/i],["Storage / Data",/storage|filecoin|arweave|data availability/i],["Health",/health|medical|biotech/i],["Gaming",/gaming|gamefi|play to earn|immutable/i],["RWA",/real world asset|tokenized treasury|tokenization/i],["Aerospace / Defense",/aerospace|satellite|defense|military/i]];
 function newsScore(items,coin){let text=coin.base+" "+coin.symbol,matched=items.filter(n=>(n.title+" "+n.summary).toLowerCase().includes(text.toLowerCase()));let s=50;for(let n of matched.slice(0,15)){if(/hack|exploit|lawsuit|delist|fraud|breach|outage/i.test(n.title))s-=10;else if(/launch|upgrade|partnership|adoption|revenue|mainnet|funding|approval/i.test(n.title))s+=5;}return{score:Math.max(0,Math.min(100,s)),matches:matched.slice(0,4),count:matched.length};}
 async function pool(a,n,fn){let out=Array(a.length),next=0;await Promise.all(Array.from({length:Math.min(n,a.length)},async()=>{while(true){let i=next++;if(i>=a.length)return;try{out[i]=await fn(a[i]);}catch(e){out[i]={error:e.message};}}}));return out;}
+function scoreDerivatives(d, priceChange){
+ if(!d||!d.available)return {score:null,signals:["داده مشتقات در دسترس نیست"]};
+ let score=50,signals=[];
+ const oi=Number(d.openInterestChange24hPct),fund=Number(d.fundingRate),ls=Number(d.globalLongShortRatio);
+ if(Number.isFinite(oi)){if(oi>5){signals.push("رشد OI بیش از ۵٪؛ افزایش اهرم/مشارکت");if(priceChange>0)score+=5;else if(priceChange<0)score-=5;}else if(oi< -5)signals.push("افت OI بیش از ۵٪؛ کاهش موقعیت‌های باز");}
+ if(Number.isFinite(fund)){if(fund>=0.0005){score-=8;signals.push("فاندینگ بسیار مثبت؛ ریسک ازدحام لانگ");}else if(fund<=-0.0005){score+=4;signals.push("فاندینگ بسیار منفی؛ احتمال ازدحام شورت");}else signals.push("فاندینگ نزدیک محدوده خنثی");}
+ if(Number.isFinite(ls)){if(ls>=1.5){score-=5;signals.push("غلبه محسوس حساب‌های لانگ؛ ریسک شلوغی");}else if(ls<=0.67){score+=3;signals.push("غلبه حساب‌های شورت؛ امکان فشار خرید در صورت تأیید");}}
+ return {score:Math.max(0,Math.min(100,score)),signals};
+}
 async function loadAllSignals(){
  let [md,nd]=await Promise.all([api("/api/market?limit=250"),api("/api/news")]);
  let news=nd.news||[],markets=(md.markets||[]).slice(0,30);
- let out=await pool(markets,3,async coin=>{
+ let out=await pool(markets,3,async (coin,index)=>{
   const sym=encodeURIComponent(coin.symbol);
-  const [d1,w1,m1]=await Promise.all([
+  const [d1,w1,m1,deriv]=await Promise.all([
    api("/api/candles?symbol="+sym+"&interval=1d&limit=365"),
    api("/api/candles?symbol="+sym+"&interval=1w&limit=260"),
    api("/api/candles?symbol="+sym+"&interval=1M&limit=120")
@@ -27,11 +36,11 @@ async function loadAllSignals(){
   const daily=map(d1),weekly=map(w1),monthly=map(m1),t=multi(daily,weekly,monthly),n=newsScore(news,coin);
   const txt=(coin.base+" "+n.matches.map(x=>x.title+" "+x.summary).join(" ")).toLowerCase();
   const sectors=sectorRules.filter(x=>x[1].test(txt)).map(x=>x[0]),fs=Math.min(100,25+sectors.length*10),ts=t.score||0;
-  const combined=Math.round((ts*.55+fs*.15+n.score*.30)*10)/10;
+  const ds=scoreDerivatives(deriv,coin.change24h),hasDeriv=ds.score!==null;\n  const combined=Math.round((ts*(hasDeriv?.50:.55)+fs*.15+n.score*(hasDeriv?.25:.30)+(hasDeriv?ds.score*.10:0))*10)/10;
   return {symbol:coin.base,name:coin.base,marketSymbol:coin.symbol,current_price:coin.price,change24h:coin.change24h,volume24h:coin.quoteVolume24h,combined_signal:combined,verdict:t.conflict?"تضاد تایم‌فریم؛ احتیاط":combined>=70?"بررسی اولویت‌دار":combined>=55?"تحت مراقبت":"اولویت پایین",
    breakdown:{technical:{score:ts,signals:Object.entries(t.frames).filter(x=>x[1].available).flatMap(x=>[x[0]+": "+x[1].score,...x[1].signals.slice(0,2)]),multi:t},
    fundamental:{score:fs,sectors,signals:["امتیاز حوزه مقدماتی است و جایگزین بررسی توکنومیک و صورت‌های مالی نیست."]},
-   news:{score:n.score,sources_count:new Set(n.matches.map(x=>x.source)).size,news_count:n.count,top_titles:n.matches.map(x=>({title:x.title,source:x.source,link:x.link}))}},
+   news:{score:n.score,sources_count:new Set(n.matches.map(x=>x.source)).size,news_count:n.count,top_titles:n.matches.map(x=>({title:x.title,source:x.source,link:x.link}))},\n   derivatives:{score:ds.score,source:deriv?.source||"Binance public futures",available:Boolean(deriv?.available),openInterestUsdApprox:deriv?.openInterestUsdApprox??null,openInterestChange24hPct:deriv?.openInterestChange24hPct??null,fundingRate:deriv?.fundingRate??null,globalLongShortRatio:deriv?.globalLongShortRatio??null,longAccountPct:deriv?.longAccountPct??null,takerBuySellRatio:deriv?.takerBuySellRatio??null,signals:ds.signals,errors:deriv?.errors||[],note:deriv?.note||"داده مشتقات فقط برای ۱۵ بازار اول از نظر حجم بررسی می‌شود."}},
    data_quality:{dailyCandles:daily.length,weeklyCandles:weekly.length,monthlyCandles:monthly.length,market_updated:md.updatedAt,news_updated:nd.updatedAt}};
  });
  let valid=out.filter(x=>x&&!x.error&&x.current_price>0).sort((a,b)=>b.combined_signal-a.combined_signal);
