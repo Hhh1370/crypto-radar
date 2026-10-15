@@ -92,6 +92,19 @@ async function getCandles(url) {
     candles: raw.map(k => ({ time: k[0], open: Number(k[1]), high: Number(k[2]), low: Number(k[3]), close: Number(k[4]), volume: Number(k[5]), closeTime: k[6], quoteVolume: Number(k[7]), trades: Number(k[8]) })),
   });
 }
+async function searchCoins(query) {
+  const q = String(query || "").trim().slice(0, 80);
+  if (q.length < 1) return { query: q, results: [], source: "CoinGecko public search", updatedAt: new Date().toISOString() };
+  const response = await cachedFetch("https://api.coingecko.com/api/v3/search?query=" + encodeURIComponent(q), 300);
+  const data = await response.json();
+  const results = (data.coins || []).slice(0, 20).map(x => ({
+    id: x.id, name: x.name, symbol: String(x.symbol || "").toUpperCase(),
+    marketCapRank: x.market_cap_rank == null ? null : Number(x.market_cap_rank),
+    thumb: x.thumb || null, large: x.large || null,
+    source: "CoinGecko public search"
+  }));
+  return { query: q, count: results.length, results, source: "CoinGecko public search (free endpoint; rate limits may apply)", updatedAt: new Date().toISOString() };
+}
 async function getDefiProtocols() {
   const response = await cachedFetch("https://api.llama.fi/protocols", 1800);
   const rows = await response.json();
@@ -240,9 +253,9 @@ export default {
       }
       if (url.pathname === "/api/candles") return await getCandles(url);
       if (url.pathname === "/api/news") return json(await getNews());
-      if (url.pathname === "/api/protocols") return json(await getDefiProtocols());
+      if (url.pathname === "/api/protocols") return json(await getDefiProtocols());\n      if (url.pathname === "/api/search") return json(await searchCoins(url.searchParams.get("q")));
       if (url.pathname === "/api/derivatives") return await getDerivatives(url, env);
-      return json({ error: "Not found", routes: ["/api/health", "/api/market", "/api/candles", "/api/news", "/api/derivatives", "/api/protocols"] }, 404);
+      return json({ error: "Not found", routes: ["/api/health", "/api/market", "/api/candles", "/api/news", "/api/derivatives", "/api/protocols", "/api/search"] }, 404);
     } catch (error) {
       return json({ error: error && error.message ? error.message : "upstream unavailable", staleDataAvailable: false }, 502);
     }
