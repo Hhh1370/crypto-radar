@@ -2,9 +2,18 @@
 <html lang="fa" dir="rtl">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="theme-color" content="#6366f1">
   <title>رادار کریپتو</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="رادار">
+
   <link rel="stylesheet" href="/static/style.css">
   <link href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/Vazirmatn-font-face.css" rel="stylesheet">
 </head>
@@ -32,5 +41,14 @@
   </footer>
 
   <script src="/static/app.js"></script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("/static/sw.js")
+          .then((reg) => console.log("SW registered:", reg.scope))
+          .catch((err) => console.log("SW error:", err));
+      });
+    }
+  </script>
 </body>
 </html>
