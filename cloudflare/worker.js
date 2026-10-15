@@ -107,7 +107,7 @@ async function searchCoins(query) {
 }
 async function getCoinOverview(id) {
   const coinId = String(id || "").trim().slice(0, 100);
-  if (!/^[a-z0-9-]+$/i.test(coinId)) return json({ error: "شناسه کوین نامعتبر است" }, 400);
+  if (!/^[a-z0-9-]+$/i.test(coinId)) throw new Error("شناسه کوین نامعتبر است");
   const response = await cachedFetch("https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=" + encodeURIComponent(coinId) + "&price_change_percentage=24h,7d,30d", 300);
   const rows = await response.json();
   const x = Array.isArray(rows) ? rows[0] : null;
