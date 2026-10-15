@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from concurrent.futures import ThreadPoolExecutor
 import httpx
 import time
@@ -18,6 +19,14 @@ from background import start_background_updater
 
 app = FastAPI(title="Crypto Radar")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 BINANCE = "https://api.binance.com/api/v3"
 COINPAPRIKA = "https://api.coinpaprika.com/v1"
 
@@ -28,7 +37,6 @@ SIGNALS_CACHE_TTL = 600  # 10 دقیقه
 
 @app.on_event("startup")
 def startup_event():
-    """شروع updater پس‌زمینه"""
     watchlist = ["bitcoin", "ethereum", "solana"]
     start_background_updater(_build_signal, watchlist, interval_seconds=600)
     print("[STARTUP] Background updater started.")
@@ -43,8 +51,6 @@ def root():
 def health():
     return {"status": "healthy"}
 
-
-# ---------- توابع داخلی ----------
 
 def _get_ohlc(coin_id: str, days: int = 365):
     if coin_id not in COINS:
@@ -449,8 +455,6 @@ def _build_signal(coin_id: str, hours: int = 48):
     }
 
 
-# ---------- اندپوینت‌ها ----------
-
 @app.get("/analyze/{coin_id}")
 def analyze_coin(coin_id: str):
     try:
@@ -553,8 +557,6 @@ def radar(limit: int = 3, refresh: bool = False):
     return {"count": len(valid), "top": valid[:limit], "cached": not refresh}
 
 
-# ---------- اخبار ----------
-
 @app.get("/news")
 def news_all():
     try:
@@ -582,8 +584,6 @@ def news_by_coin(symbol: str, hours: int = 48):
     return {"coin": symbol.upper(), "count": len(items), "news": items}
 
 
-# ---------- سیگنال ترکیبی ----------
-
 @app.get("/signal/{coin_id}")
 def get_signal(coin_id: str, hours: int = 48):
     return _build_signal(coin_id, hours=hours)
@@ -591,7 +591,6 @@ def get_signal(coin_id: str, hours: int = 48):
 
 @app.get("/signals/all")
 def get_all_signals(hours: int = 48, force: bool = False):
-    """فقط کش رو برمی‌گردونه - پاسخ فوری"""
     global _signals_cache
 
     data = _signals_cache.get("data")
@@ -613,8 +612,6 @@ def get_all_signals(hours: int = 48, force: bool = False):
         "message": "داده‌ها در حال محاسبه هستند. لطفاً ۳۰ ثانیه دیگر دوباره تلاش کنید.",
     }
 
-
-# ---------- UI ----------
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
