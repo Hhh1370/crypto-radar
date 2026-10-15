@@ -25,11 +25,11 @@ function scoreDerivatives(d, priceChange){
  return {score:Math.max(0,Math.min(100,score)),signals};
 }
 async function loadAllSignals(){
- let [md,nd]=await Promise.all([api("/api/market?limit=1000"),api("/api/news")]);
+ let [md,nd,pd]=await Promise.all([api("/api/market?limit=1000"),api("/api/news"),api("/api/protocols").catch(()=>({protocols:[]}))]);
  const allMarkets=md.markets||[];if(!allMarkets.length)throw Error("فهرست بازار خالی است.");
  const batchSize=60;let offset=Number(localStorage.getItem("cryptoRadarScanOffset")||0);if(!Number.isFinite(offset)||offset<0||offset>=allMarkets.length)offset=0;
  const markets=allMarkets.slice(offset,offset+batchSize);localStorage.setItem("cryptoRadarScanOffset",String((offset+markets.length)%allMarkets.length));
- let news=nd.news||[];
+ let news=nd.news||[],protocolMap=new Map((pd.protocols||[]).map(x=>[String(x.symbol).toUpperCase(),x]));
  let out=await pool(markets,3,async (coin,index)=>{
   const sym=encodeURIComponent(coin.symbol);
   const [d1,w1,m1,deriv]=await Promise.all([
@@ -42,11 +42,11 @@ async function loadAllSignals(){
   const daily=map(d1),weekly=map(w1),monthly=map(m1),t=multi(daily,weekly,monthly),n=newsScore(news,coin);
   const txt=(coin.base+" "+n.matches.map(x=>x.title+" "+x.summary).join(" ")).toLowerCase();
   const sectors=sectorRules.filter(x=>x[1].test(txt)).map(x=>x[0]),fs=Math.min(100,25+sectors.length*10),ts=t.score||0;
-  const ds=scoreDerivatives(deriv,coin.change24h),hasDeriv=ds.score!==null;
+  const ds=scoreDerivatives(deriv,coin.change24h),hasDeriv=ds.score!==null,protocol=protocolMap.get(coin.base)||null;
   const combined=Math.round((ts*(hasDeriv ? .50 : .55)+fs*.15+n.score*(hasDeriv ? .25 : .30)+(hasDeriv?ds.score*.10:0))*10)/10;
   return {symbol:coin.base,name:coin.base,marketSymbol:coin.symbol,current_price:coin.price,change24h:coin.change24h,volume24h:coin.quoteVolume24h,combined_signal:combined,verdict:t.conflict?"تضاد تایم‌فریم؛ احتیاط":combined>=70?"بررسی اولویت‌دار":combined>=55?"تحت مراقبت":"اولویت پایین",
    breakdown:{technical:{score:ts,signals:Object.entries(t.frames).filter(x=>x[1].available).flatMap(x=>[x[0]+": "+x[1].score,...x[1].signals.slice(0,2)]),multi:t},
-   fundamental:{score:fs,sectors,signals:["امتیاز حوزه مقدماتی است و جایگزین بررسی توکنومیک و صورت‌های مالی نیست."]},
+   fundamental:{score:fs,sectors,protocol:protocol?{name:protocol.name,tvl:protocol.tvl,change1d:protocol.change1d,change7d:protocol.change7d,marketCap:protocol.marketCap,category:protocol.category,chains:protocol.chains,url:protocol.url,identityConfidence:"ticker-only"}:null,signals:["امتیاز حوزه مقدماتی است و جایگزین بررسی توکنومیک و صورت‌های مالی نیست."]},
    news:{score:n.score,sources_count:new Set(n.matches.map(x=>x.source)).size,news_count:n.count,top_titles:n.matches.map(x=>({title:x.title,source:x.source,link:x.link}))},
    derivatives:{score:ds.score,source:deriv?.source||"Binance public futures",available:Boolean(deriv?.available),openInterestUsdApprox:deriv?.openInterestUsdApprox??null,openInterestChange24hPct:deriv?.openInterestChange24hPct??null,fundingRate:deriv?.fundingRate??null,globalLongShortRatio:deriv?.globalLongShortRatio??null,longAccountPct:deriv?.longAccountPct??null,takerBuySellRatio:deriv?.takerBuySellRatio??null,signals:ds.signals,errors:deriv?.errors||[],note:deriv?.note||"داده مشتقات فقط برای ۱۵ بازار اول از نظر حجم بررسی می‌شود."}},
    data_quality:{dailyCandles:daily.length,weeklyCandles:weekly.length,monthlyCandles:monthly.length,market_updated:md.updatedAt,news_updated:nd.updatedAt}};
