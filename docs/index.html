@@ -25,7 +25,7 @@
     <button id="refresh-btn" onclick="loadData()">🔄 بروزرسانی</button>
   </header>
 
-  <section class="settings-panel"><details><summary>⚙️ تنظیم اتصال رایگان Cloudflare</summary><form id="api-settings"><label for="api-base">آدرس Worker (پس از Deploy از Cloudflare کپی کن)</label><input id="api-base" type="url" inputmode="url" placeholder="https://crypto-radar-public-data.username.workers.dev" autocomplete="url"><button type="submit">ذخیره و آزمایش اتصال</button><p id="api-status" class="hint">آدرس فقط در همین مرورگر ذخیره می‌شود؛ کلید API لازم نیست.</p></form></details></section>
+  <section class="settings-panel"><details><summary>⚙️ تنظیم اتصال رایگان Cloudflare</summary><form id="api-settings"><label for="api-base">آدرس Worker (پس از Deploy از Cloudflare کپی کن)</label><input id="api-base" type="url" inputmode="url" placeholder="https://crypto-radar-public-data.username.workers.dev" autocomplete="url"><label for="derivatives-source">منبع داده مشتقات</label><select id="derivatives-source"><option value="binance">Binance Futures عمومی — رایگان، بدون کلید</option><option value="coinglass">CoinGlass — داده تجمیعی چند صرافی، نیازمند API Key</option></select><p class="hint">برای CoinGlass باید کلید را فقط در Cloudflare Worker به‌صورت Secret با نام COINGLASS_API_KEY ثبت کنی؛ هرگز آن را در این صفحه وارد نکن.</p><button type="submit">ذخیره و آزمایش اتصال</button><p id="api-status" class="hint">آدرس فقط در همین مرورگر ذخیره می‌شود؛ کلید خصوصی در مرورگر ذخیره نمی‌شود.</p></form></details></section>
   <main id="main">
     <div id="loading" class="loading">
       <div class="spinner"></div>

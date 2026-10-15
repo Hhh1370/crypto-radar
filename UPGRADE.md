@@ -2,7 +2,7 @@
 
 ## Architecture
 - **GitHub Pages** serves the Persian, mobile-first interface in `docs/`.
-- **Cloudflare Worker** in `cloudflare/worker.js` provides no-key public data routes for Binance spot USDT tickers, candle history, and public RSS headlines.
+- **Cloudflare Worker** in `cloudflare/worker.js` provides no-key public data routes for Binance spot USDT tickers, daily/weekly/monthly candle history, public Binance futures metrics (open interest, funding, long/short accounts, taker ratio), and public RSS headlines, and cached public DeFiLlama protocol TVL data.
 - **`pro_engine.py`** is a Python multi-timeframe analysis module with unit tests. The static browser scanner separately computes daily, weekly, and monthly structure by aggregating daily OHLCV candles.
 
 ## Deploy the free data worker
@@ -17,10 +17,10 @@ No paid API key is needed. Free service quotas, upstream rate limits, and region
 
 ## Current scope and honest limitations
 - The market list is Binance **spot USDT pairs**, not every token deployed on every chain.
-- The first-pass detailed chart scan covers the 30 highest-quote-volume markets returned by the Worker. Expanding this to the full market needs staged/rotating scans and careful upstream rate-limit handling.
+- The browser scans 60 markets per refresh from up to 1,000 Binance spot USDT pairs, rotates through the list and stores prior results in the current browser to build a cross-batch watchlist. Keep in mind this is not an always-on server-side scan: the browser must be opened/refreshed to advance the scan. Cached scores are not equally fresh; each card shows scan age. Browser storage may be cleared or reach its quota.
 - News is pulled from public RSS feeds; some publishers may block requests or change their feed. Failed sources are reported by the Worker.
 - The browser's sector and headline scoring is explicitly a **rough proxy**, not audited fundamental analysis. Symbol-only news matching can create false positives. It must not be treated as a calibrated probability of returns.
-- The Worker does not yet collect comprehensive tokenomics, unlock schedules, protocol revenue, GitHub development metrics, exploit/security records, whale flows, or healthcare/energy/defense project evidence. These need source-by-source validation before being scored.
+- DeFiLlama protocol TVL is shown as supplemental context only when a ticker matches one unique protocol symbol; because ticker identity is not verified, this data is not included in the combined score.\n- CoinGlass can be useful for cross-exchange open interest and funding rates, liquidation maps, and wider derivatives coverage. Its official API pricing currently starts at $29/month, so this project defaults to free public Binance Futures data and does not require buying CoinGlass. An optional CoinGlass route exists only if you already have an API key; store it in Cloudflare Worker Secrets as `COINGLASS_API_KEY`, never in the browser or GitHub source. Check current plan limits before enabling it.\n- The Worker does not yet collect comprehensive tokenomics, unlock schedules, protocol revenue, GitHub development metrics, exploit/security records, reliable whale flows, or healthcare/energy/defense project evidence. These need source-by-source validation before being scored.
 - This app is research-only. It does not place orders or connect to exchange trading credentials.
 
 ## Validation
