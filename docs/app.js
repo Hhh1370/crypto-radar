@@ -32,7 +32,7 @@ function renderCard(data){
  ${frameRows.length?`<div class="section"><div class="section-title">🧭 روند چندبازه‌ای</div><div class="chips">${frameRows.map(({name,f})=>`<span class="chip">${name}: ${f.score}/100</span>`).join("")}</div><div class="level-grid">${frameRows.map(({name,f})=>`<div class="level-box"><b>${name}</b><small>حمایت: ${(f.levels?.support||[]).slice(0,2).map(fmt).join(" · ")||"—"}</small><small>مقاومت: ${(f.levels?.resistance||[]).slice(0,2).map(fmt).join(" · ")||"—"}</small>${f.breakout&&f.breakout!=="none"?`<small>شکست: ${f.breakout==="up"?"صعودی":"نزولی"}</small>`:""}</div>`).join("")}</div>${multi.conflict?'<p class="warning-note">تضاد معنادار بین تایم‌فریم‌ها؛ ورود عجولانه مناسب نیست.</p>':""}</div>`:""}
  ${(fund.sectors||[]).length?`<div class="section"><div class="section-title">🏭 حوزه‌های احتمالی</div><div class="chips">${fund.sectors.map(s=>`<span class="chip sector">${s}</span>`).join("")}</div></div>`:""}
  ${newsRows.length?`<div class="section"><div class="section-title">📰 اخبار مرتبط (${news.news_count||0})</div><div class="news-list">${newsRows.map(n=>`<a class="news-item" href="${n.link}" target="_blank" rel="noopener"><span class="news-source">[${n.source}]</span> ${n.title}</a>`).join("")}</div></div>`:""}
- <p class="data-note">کیفیت داده: ${data.data_quality?.candles||0} کندل روزانه · امتیاز حوزه/خبر مقدماتی است و احتمال موفقیت محسوب نمی‌شود.</p>`;
+ <p class="data-note">کیفیت داده: ${data.data_quality?.dailyCandles||data.data_quality?.candles||0} کندل روزانه · امتیاز حوزه/خبر مقدماتی است و احتمال موفقیت محسوب نمی‌شود.</p>`;
  cards.appendChild(card);
 }
 function initSettings(){
