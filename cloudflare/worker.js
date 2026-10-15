@@ -135,12 +135,7 @@ async function getDerivatives(url, env) {
     }
     const headers = { "CG-API-KEY": env.COINGLASS_API_KEY, "Accept": "application/json" };
     const root = "https://open-api-v4.coinglass.com";
-    const [oi, funding] = await Promise.all([
-      safeJson(root + "/api/futures/open-interest/exchange-list?symbol=" + encodeURIComponent(base), 30, headers),
-      safeJson(root + "/api/futures/funding-rate/exchange-list?symbol=" + encodeURIComponent(base), 30, headers),
-    ]);
-    // safeJson's generic cache helper cannot attach authorization headers, so perform the
-    // authenticated requests directly; the key is only ever used server-side.
+    // Authenticated requests are made only in this Worker; the secret never reaches the browser.
     async function cg(path) {
       try {
         const cacheKey = new Request("https://crypto-radar-cg-cache.invalid/" + encodeURIComponent(base) + "/" + path.split("?")[0]);
@@ -149,7 +144,7 @@ async function getDerivatives(url, env) {
         if (cached) return await cached.json();
         const res = await fetch(root + path, { headers, signal: AbortSignal.timeout(10000) });
         const data = await res.json().catch(() => ({}));
-        if (!res.ok || data.code && String(data.code) !== "0") return { _error: data.msg || ("HTTP " + res.status) };
+        if (!res.ok || (data.code != null && String(data.code) !== "0")) return { _error: data.msg || ("HTTP " + res.status) };
         const copy = new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=30" } });
         await cache.put(cacheKey, copy);
         return data;
