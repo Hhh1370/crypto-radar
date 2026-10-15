@@ -157,7 +157,7 @@ async function getDerivatives(url, env) {
     const oiRows = Array.isArray(oiData.data) ? oiData.data : [];
     const fundingRows = Array.isArray(fundingData.data) ? fundingData.data : [];
     const totalOi = oiRows.find(x => x.exchange === "All") || null;
-    const rates = fundingRows.flatMap(x => [...(x.stablecoin_margin_list || []), ...(x.token_margin_list || [])]).filter(x => Number.isFinite(Number(x.funding_rate)));
+    const rates = fundingRows.flatMap(x => (x.stablecoin_margin_list || []).map(r => ({ ...r, funding_rate: Number(r.funding_rate) / 100 }))).filter(x => Number.isFinite(Number(x.funding_rate)));
     return json({ symbol, source: "CoinGlass", updatedAt: new Date().toISOString(), available: Boolean(totalOi || rates.length), openInterestUsd: totalOi ? Number(totalOi.open_interest_usd) : null, funding: rates.slice(0, 12), errors: [oiData._error, fundingData._error].filter(Boolean), note: "پوشش و محدودیت درخواست تابع پلن CoinGlass است." });
   }
   const root = "https://fapi.binance.com";
