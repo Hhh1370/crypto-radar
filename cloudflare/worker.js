@@ -225,7 +225,9 @@ async function getDerivatives(url, env) {
     const fundingRows = Array.isArray(fundingData.data) ? fundingData.data : [];
     const totalOi = oiRows.find(x => x.exchange === "All") || null;
     const rates = fundingRows.flatMap(x => (x.stablecoin_margin_list || []).map(r => ({ ...r, funding_rate: Number(r.funding_rate) / 100 }))).filter(x => Number.isFinite(Number(x.funding_rate)));
-    const sortedRates = rates.map(x => Number(x.funding_rate)).sort((a,b) => a-b);\n    const medianFunding = sortedRates.length ? sortedRates[Math.floor(sortedRates.length / 2)] : null;\n    return json({ symbol, source: "CoinGlass", updatedAt: new Date().toISOString(), available: Boolean(totalOi || rates.length), openInterestUsd: totalOi ? Number(totalOi.open_interest_usd) : null, fundingRate: medianFunding, funding: rates.slice(0, 12), errors: [oiData._error, fundingData._error].filter(Boolean), note: "پوشش و محدودیت درخواست تابع پلن CoinGlass است." });
+    const sortedRates = rates.map(x => Number(x.funding_rate)).sort((a,b) => a-b);
+    const medianFunding = sortedRates.length ? sortedRates[Math.floor(sortedRates.length / 2)] : null;
+    return json({ symbol, source: "CoinGlass", updatedAt: new Date().toISOString(), available: Boolean(totalOi || rates.length), openInterestUsd: totalOi ? Number(totalOi.open_interest_usd) : null, fundingRate: medianFunding, funding: rates.slice(0, 12), errors: [oiData._error, fundingData._error].filter(Boolean), note: "پوشش و محدودیت درخواست تابع پلن CoinGlass است." });
   }
   const root = "https://fapi.binance.com";
   const urls = {
@@ -279,7 +281,9 @@ export default {
       }
       if (url.pathname === "/api/candles") return await getCandles(url);
       if (url.pathname === "/api/news") return json(await getNews());
-      if (url.pathname === "/api/protocols") return json(await getDefiProtocols());\n      if (url.pathname === "/api/search") return json(await searchCoins(url.searchParams.get("q")));\n      if (url.pathname === "/api/coin") return json(await getCoinOverview(url.searchParams.get("id")));
+      if (url.pathname === "/api/protocols") return json(await getDefiProtocols());
+      if (url.pathname === "/api/search") return json(await searchCoins(url.searchParams.get("q")));
+      if (url.pathname === "/api/coin") return json(await getCoinOverview(url.searchParams.get("id")));
       if (url.pathname === "/api/derivatives") return await getDerivatives(url, env);
       return json({ error: "Not found", routes: ["/api/health", "/api/market", "/api/candles", "/api/news", "/api/derivatives", "/api/protocols", "/api/search", "/api/coin"] }, 404);
     } catch (error) {
