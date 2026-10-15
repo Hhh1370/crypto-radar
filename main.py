@@ -3,6 +3,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from concurrent.futures import ThreadPoolExecutor
 import httpx
+import time
+from threading import Lock
 from indicators import (
     calculate_rsi, calculate_sma, calculate_ema, calculate_macd,
     calculate_bollinger, calculate_adx, calculate_atr,
@@ -17,6 +19,10 @@ app = FastAPI(title="Crypto Radar")
 
 BINANCE = "https://api.binance.com/api/v3"
 COINPAPRIKA = "https://api.coinpaprika.com/v1"
+
+_signals_cache = {"data": None, "timestamp": 0}
+_signals_lock = Lock()
+SIGNALS_CACHE_TTL = 600  # 10 دقیقه
 
 
 @app.get("/")
@@ -352,7 +358,6 @@ def _fundamental_score(coin_data: dict):
 
 
 def _build_signal(coin_id: str, hours: int = 48):
-    """ساخت سیگنال ترکیبی برای یک ارز (کمکی برای /signals/all)"""
     try:
         info = _get_coin_info(coin_id)
     except Exception as e:
@@ -576,15 +581,34 @@ def get_signal(coin_id: str, hours: int = 48):
 
 
 @app.get("/signals/all")
-def get_all_signals(hours: int = 48):
-    """گرفتن سیگنال ۳ ارز به صورت موازی (سریع‌تر)"""
+def get_all_signals(hours: int = 48, force: bool = False):
+    """گرفتن سیگنال ۳ ارز با کش ۱۰ دقیقه‌ای"""
+    global _signals_cache
+
+    # چک کش
+    if not force and _signals_cache["data"]:
+        age = time.time() - _signals_cache["timestamp"]
+        if age < SIGNALS_CACHE_TTL:
+            return {
+                "count": len(_signals_cache["data"]),
+                "signals": _signals_cache["data"],
+                "cached": True,
+                "age_seconds": int(age),
+            }
+
+    # محاسبه‌ی جدید
     watchlist = ["bitcoin", "ethereum", "solana"]
 
     with ThreadPoolExecutor(max_workers=3) as executor:
         results = list(executor.map(lambda c: _build_signal(c, hours=hours), watchlist))
 
     results.sort(key=lambda x: x.get("combined_signal", 0), reverse=True)
-    return {"count": len(results), "signals": results}
+
+    with _signals_lock:
+        _signals_cache["data"] = results
+        _signals_cache["timestamp"] = time.time()
+
+    return {"count": len(results), "signals": results, "cached": False}
 
 
 # ---------- UI ----------
