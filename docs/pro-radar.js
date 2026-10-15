@@ -1,5 +1,7 @@
 /* Multi-timeframe market scanner for Crypto Radar. */
-const API_KEY = "cryptoRadarApiBase";\nconst DERIV_SOURCE_KEY = "cryptoRadarDerivativesSource";\nfunction derivativesSource(){return localStorage.getItem(DERIV_SOURCE_KEY)==="coinglass"?"coinglass":"binance";}
+const API_KEY = "cryptoRadarApiBase";
+const DERIV_SOURCE_KEY = "cryptoRadarDerivativesSource";
+function derivativesSource(){return localStorage.getItem(DERIV_SOURCE_KEY)==="coinglass"?"coinglass":"binance";}
 function apiBase(){return(localStorage.getItem(API_KEY)||"").trim().replace(/\/$/,"");}
 function saveApiBase(v){v=(v||"").trim().replace(/\/$/,"");if(v)localStorage.setItem(API_KEY,v);else localStorage.removeItem(API_KEY);}
 async function api(path){if(!apiBase())throw Error("آدرس Worker کلادفلر را در تنظیمات وارد کن.");const r=await fetch(apiBase()+path);const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||("HTTP "+r.status));return d;}
@@ -40,11 +42,13 @@ async function loadAllSignals(){
   const daily=map(d1),weekly=map(w1),monthly=map(m1),t=multi(daily,weekly,monthly),n=newsScore(news,coin);
   const txt=(coin.base+" "+n.matches.map(x=>x.title+" "+x.summary).join(" ")).toLowerCase();
   const sectors=sectorRules.filter(x=>x[1].test(txt)).map(x=>x[0]),fs=Math.min(100,25+sectors.length*10),ts=t.score||0;
-  const ds=scoreDerivatives(deriv,coin.change24h),hasDeriv=ds.score!==null;\n  const combined=Math.round((ts*(hasDeriv ? .50 : .55)+fs*.15+n.score*(hasDeriv ? .25 : .30)+(hasDeriv?ds.score*.10:0))*10)/10;
+  const ds=scoreDerivatives(deriv,coin.change24h),hasDeriv=ds.score!==null;
+  const combined=Math.round((ts*(hasDeriv ? .50 : .55)+fs*.15+n.score*(hasDeriv ? .25 : .30)+(hasDeriv?ds.score*.10:0))*10)/10;
   return {symbol:coin.base,name:coin.base,marketSymbol:coin.symbol,current_price:coin.price,change24h:coin.change24h,volume24h:coin.quoteVolume24h,combined_signal:combined,verdict:t.conflict?"تضاد تایم‌فریم؛ احتیاط":combined>=70?"بررسی اولویت‌دار":combined>=55?"تحت مراقبت":"اولویت پایین",
    breakdown:{technical:{score:ts,signals:Object.entries(t.frames).filter(x=>x[1].available).flatMap(x=>[x[0]+": "+x[1].score,...x[1].signals.slice(0,2)]),multi:t},
    fundamental:{score:fs,sectors,signals:["امتیاز حوزه مقدماتی است و جایگزین بررسی توکنومیک و صورت‌های مالی نیست."]},
-   news:{score:n.score,sources_count:new Set(n.matches.map(x=>x.source)).size,news_count:n.count,top_titles:n.matches.map(x=>({title:x.title,source:x.source,link:x.link}))},\n   derivatives:{score:ds.score,source:deriv?.source||"Binance public futures",available:Boolean(deriv?.available),openInterestUsdApprox:deriv?.openInterestUsdApprox??null,openInterestChange24hPct:deriv?.openInterestChange24hPct??null,fundingRate:deriv?.fundingRate??null,globalLongShortRatio:deriv?.globalLongShortRatio??null,longAccountPct:deriv?.longAccountPct??null,takerBuySellRatio:deriv?.takerBuySellRatio??null,signals:ds.signals,errors:deriv?.errors||[],note:deriv?.note||"داده مشتقات فقط برای ۱۵ بازار اول از نظر حجم بررسی می‌شود."}},
+   news:{score:n.score,sources_count:new Set(n.matches.map(x=>x.source)).size,news_count:n.count,top_titles:n.matches.map(x=>({title:x.title,source:x.source,link:x.link}))},
+   derivatives:{score:ds.score,source:deriv?.source||"Binance public futures",available:Boolean(deriv?.available),openInterestUsdApprox:deriv?.openInterestUsdApprox??null,openInterestChange24hPct:deriv?.openInterestChange24hPct??null,fundingRate:deriv?.fundingRate??null,globalLongShortRatio:deriv?.globalLongShortRatio??null,longAccountPct:deriv?.longAccountPct??null,takerBuySellRatio:deriv?.takerBuySellRatio??null,signals:ds.signals,errors:deriv?.errors||[],note:deriv?.note||"داده مشتقات فقط برای ۱۵ بازار اول از نظر حجم بررسی می‌شود."}},
    data_quality:{dailyCandles:daily.length,weeklyCandles:weekly.length,monthlyCandles:monthly.length,market_updated:md.updatedAt,news_updated:nd.updatedAt}};
  });
  let valid=out.filter(x=>x&&!x.error&&x.current_price>0).sort((a,b)=>b.combined_signal-a.combined_signal);
