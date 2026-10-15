@@ -30,7 +30,8 @@ async function loadAllSignals(){
   const [d1,w1,m1,deriv]=await Promise.all([
    api("/api/candles?symbol="+sym+"&interval=1d&limit=365"),
    api("/api/candles?symbol="+sym+"&interval=1w&limit=260"),
-   api("/api/candles?symbol="+sym+"&interval=1M&limit=120")
+   api("/api/candles?symbol="+sym+"&interval=1M&limit=120"),
+   index<15?api("/api/derivatives?symbol="+sym+"&source="+derivativesSource()).catch(()=>null):Promise.resolve(null)
   ]);
   const map=x=>(x.candles||[]).map(c=>({time:c.time,open:c.open,high:c.high,low:c.low,close:c.close,volume:c.volume}));
   const daily=map(d1),weekly=map(w1),monthly=map(m1),t=multi(daily,weekly,monthly),n=newsScore(news,coin);
