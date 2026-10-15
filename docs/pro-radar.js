@@ -1,5 +1,5 @@
 /* Multi-timeframe market scanner for Crypto Radar. */
-const API_KEY = "cryptoRadarApiBase";
+const API_KEY = "cryptoRadarApiBase";\nconst DERIV_SOURCE_KEY = "cryptoRadarDerivativesSource";\nfunction derivativesSource(){return localStorage.getItem(DERIV_SOURCE_KEY)==="coinglass"?"coinglass":"binance";}
 function apiBase(){return(localStorage.getItem(API_KEY)||"").trim().replace(/\/$/,"");}
 function saveApiBase(v){v=(v||"").trim().replace(/\/$/,"");if(v)localStorage.setItem(API_KEY,v);else localStorage.removeItem(API_KEY);}
 async function api(path){if(!apiBase())throw Error("آدرس Worker کلادفلر را در تنظیمات وارد کن.");const r=await fetch(apiBase()+path);const d=await r.json().catch(()=>({}));if(!r.ok)throw Error(d.error||("HTTP "+r.status));return d;}
@@ -16,7 +16,7 @@ async function pool(a,n,fn){let out=Array(a.length),next=0;await Promise.all(Arr
 function scoreDerivatives(d, priceChange){
  if(!d||!d.available)return {score:null,signals:["داده مشتقات در دسترس نیست"]};
  let score=50,signals=[];
- const oi=Number(d.openInterestChange24hPct),fund=Number(d.fundingRate),ls=Number(d.globalLongShortRatio);
+ const oi=d.openInterestChange24hPct==null?NaN:Number(d.openInterestChange24hPct),fund=d.fundingRate==null?NaN:Number(d.fundingRate),ls=d.globalLongShortRatio==null?NaN:Number(d.globalLongShortRatio);
  if(Number.isFinite(oi)){if(oi>5){signals.push("رشد OI بیش از ۵٪؛ افزایش اهرم/مشارکت");if(priceChange>0)score+=5;else if(priceChange<0)score-=5;}else if(oi< -5)signals.push("افت OI بیش از ۵٪؛ کاهش موقعیت‌های باز");}
  if(Number.isFinite(fund)){if(fund>=0.0005){score-=8;signals.push("فاندینگ بسیار مثبت؛ ریسک ازدحام لانگ");}else if(fund<=-0.0005){score+=4;signals.push("فاندینگ بسیار منفی؛ احتمال ازدحام شورت");}else signals.push("فاندینگ نزدیک محدوده خنثی");}
  if(Number.isFinite(ls)){if(ls>=1.5){score-=5;signals.push("غلبه محسوس حساب‌های لانگ؛ ریسک شلوغی");}else if(ls<=0.67){score+=3;signals.push("غلبه حساب‌های شورت؛ امکان فشار خرید در صورت تأیید");}}
