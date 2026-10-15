@@ -1,3 +1,4 @@
+import httpx
 import feedparser
 import re
 import json
@@ -5,6 +6,7 @@ import os
 import time
 from datetime import datetime
 from time import mktime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 FEEDS = {
@@ -15,9 +17,8 @@ FEEDS = {
     "ArzDigital": "https://arzdigital.com/feed/",
 }
 
-
 CACHE_FILE = "data/news_cache.json"
-CACHE_TTL_SECONDS = 1800  # 30 دقیقه
+CACHE_TTL_SECONDS = 1800
 
 
 COIN_KEYWORDS = {
@@ -70,7 +71,10 @@ def detect_coins(text: str):
 
 
 def _ensure_data_dir():
-    os.makedirs("data", exist_ok=True)
+    try:
+        os.makedirs("data", exist_ok=True)
+    except Exception:
+        pass
 
 
 def _load_cache():
@@ -96,44 +100,78 @@ def _save_cache(data):
         pass
 
 
+def _fetch_feed(source_name, url, timeout=8.0):
+    """گرفتن فید با timeout کوتاه"""
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; CryptoRadar/1.0)"}
+        r = httpx.get(url, timeout=timeout, headers=headers, follow_redirects=True)
+        if r.status_code != 200:
+            print(f"  {source_name}: HTTP {r.status_code}")
+            return []
+        feed = feedparser.parse(r.content)
+        if not feed.entries:
+            print(f"  {source_name}: no entries")
+            return []
+        print(f"  {source_name}: {len(feed.entries)} items")
+        return feed.entries[:30]
+    except Exception as e:
+        print(f"  {source_name}: error {str(e)[:60]}")
+        return []
+
+
+def _parse_entry(source, entry):
+    """تبدیل یه entry به dict"""
+    try:
+        title = entry.get("title", "")
+        summary = entry.get("summary", "")
+        link = entry.get("link", "")
+
+        published_dt = None
+        if hasattr(entry, "published_parsed") and entry.published_parsed:
+            try:
+                published_dt = datetime.fromtimestamp(mktime(entry.published_parsed))
+            except Exception:
+                published_dt = None
+
+        full_text = title + " " + summary
+        coins = detect_coins(full_text)
+        summary_clean = re.sub(r"<[^>]+>", "", summary)[:300]
+
+        return {
+            "source": source,
+            "title": title,
+            "summary": summary_clean,
+            "link": link,
+            "published": published_dt.isoformat() if published_dt else None,
+            "published_ts": published_dt.timestamp() if published_dt else 0,
+            "coins": coins,
+        }
+    except Exception:
+        return None
+
+
 def _fetch_all_news_raw():
+    """گرفتن همه‌ی فیدها به صورت موازی"""
     all_news = []
 
-    for source, url in FEEDS.items():
-        try:
-            feed = feedparser.parse(url)
-            if not feed.entries:
-                print("no entries: " + source)
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {
+            executor.submit(_fetch_feed, source, url): source
+            for source, url in FEEDS.items()
+        }
+
+        for future in as_completed(futures):
+            source = futures[future]
+            try:
+                entries = future.result()
+            except Exception as e:
+                print(f"  {source}: future err {str(e)[:60]}")
                 continue
-            print(source + ": " + str(len(feed.entries)) + " items")
 
-            for entry in feed.entries[:30]:
-                title = entry.get("title", "")
-                summary = entry.get("summary", "")
-                link = entry.get("link", "")
-
-                published_dt = None
-                if hasattr(entry, "published_parsed") and entry.published_parsed:
-                    try:
-                        published_dt = datetime.fromtimestamp(mktime(entry.published_parsed))
-                    except Exception:
-                        published_dt = None
-
-                full_text = title + " " + summary
-                coins = detect_coins(full_text)
-                summary_clean = re.sub(r"<[^>]+>", "", summary)[:300]
-
-                all_news.append({
-                    "source": source,
-                    "title": title,
-                    "summary": summary_clean,
-                    "link": link,
-                    "published": published_dt.isoformat() if published_dt else None,
-                    "published_ts": published_dt.timestamp() if published_dt else 0,
-                    "coins": coins,
-                })
-        except Exception as e:
-            print("error " + source + ": " + str(e)[:80])
+            for entry in entries:
+                parsed = _parse_entry(source, entry)
+                if parsed:
+                    all_news.append(parsed)
 
     all_news.sort(key=lambda x: x["published_ts"], reverse=True)
     return all_news
