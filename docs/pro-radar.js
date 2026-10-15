@@ -23,8 +23,11 @@ function scoreDerivatives(d, priceChange){
  return {score:Math.max(0,Math.min(100,score)),signals};
 }
 async function loadAllSignals(){
- let [md,nd]=await Promise.all([api("/api/market?limit=250"),api("/api/news")]);
- let news=nd.news||[],markets=(md.markets||[]).slice(0,30);
+ let [md,nd]=await Promise.all([api("/api/market?limit=1000"),api("/api/news")]);
+ const allMarkets=md.markets||[];if(!allMarkets.length)throw Error("فهرست بازار خالی است.");
+ const batchSize=60;let offset=Number(localStorage.getItem("cryptoRadarScanOffset")||0);if(!Number.isFinite(offset)||offset<0||offset>=allMarkets.length)offset=0;
+ const markets=allMarkets.slice(offset,offset+batchSize);localStorage.setItem("cryptoRadarScanOffset",String((offset+markets.length)%allMarkets.length));
+ let news=nd.news||[];
  let out=await pool(markets,3,async (coin,index)=>{
   const sym=encodeURIComponent(coin.symbol);
   const [d1,w1,m1,deriv]=await Promise.all([
