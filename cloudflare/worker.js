@@ -59,6 +59,7 @@ async function getMarket(limit) {
   const response = await cachedFetch(BINANCE + "/api/v3/ticker/24hr", 45);
   const data = await response.json();
   const rows = data.filter(x => x.symbol.endsWith("USDT") && !x.symbol.includes("_"))
+    .filter(x => { const base = x.symbol.slice(0, -4); return !/(UP|DOWN|BULL|BEAR)$/.test(base) && !new Set(["USDC","FDUSD","TUSD","BUSD","USDP","DAI","USDE","USDD","EUR","TRY","BRL","AEUR"]).has(base); })
     .filter(x => Number(x.lastPrice) > 0 && Number(x.quoteVolume) > 0)
     .map(x => ({
       symbol: x.symbol,
