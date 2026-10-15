@@ -10,7 +10,8 @@
  *
  * Respect upstream terms and rate limits. This is a read-only research service.
  */
-const BINANCE = "https://api.binance.com";
+const COINGECKO = "https://api.coingecko.com/api/v3";
+const cgHeaders = env => env && env.COINGECKO_DEMO_API_KEY ? { "x-cg-demo-api-key": env.COINGECKO_DEMO_API_KEY } : {};
 const FEEDS = [
   ["CoinDesk", "https://www.coindesk.com/arc/outboundfeeds/rss/"],
   ["Cointelegraph", "https://cointelegraph.com/rss"],
@@ -40,13 +41,13 @@ function tag(block, name) {
   const match = block.match(new RegExp("<" + name + "(?:\\s[^>]*)?>([\\s\\S]*?)</" + name + ">", "i"));
   return match ? xmlText(match[1]) : "";
 }
-async function cachedFetch(url, ttl = 60) {
+async function cachedFetch(url, ttl = 60, extraHeaders = {}) {
   const cache = caches.default;
   const key = new Request(url, { method: "GET" });
   const cached = await cache.match(key);
   if (cached) return cached;
   const upstream = await fetch(url, {
-    headers: { "User-Agent": "CryptoRadar/1.0 (public research dashboard)", "Accept": "application/json, application/rss+xml, application/xml, text/xml" },
+    headers: { "User-Agent": "CryptoRadar/1.0 (public research dashboard)", "Accept": "application/json, application/rss+xml, application/xml, text/xml", ...extraHeaders },
     signal: AbortSignal.timeout(12000),
   });
   if (!upstream.ok) throw new Error("منبع داده پاسخ " + upstream.status + " داد");
@@ -55,47 +56,47 @@ async function cachedFetch(url, ttl = 60) {
   await cache.put(key, response.clone());
   return response;
 }
-async function getMarket(limit) {
-  const response = await cachedFetch(BINANCE + "/api/v3/ticker/24hr", 45);
+async function getMarket(limit, env) {
+  const perPage = Math.max(10, Math.min(250, Number(limit) || 250));
+  const response = await cachedFetch(COINGECKO + "/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=" + perPage + "&page=1&sparkline=false&price_change_percentage=24h", 60, cgHeaders(env));
   const data = await response.json();
-  const rows = data.filter(x => x.symbol.endsWith("USDT") && !x.symbol.includes("_"))
-    .filter(x => { const base = x.symbol.slice(0, -4); return !/(UP|DOWN|BULL|BEAR)$/.test(base) && !new Set(["USDC","FDUSD","TUSD","BUSD","USDP","DAI","USDE","USDD","EUR","TRY","BRL","AEUR"]).has(base); })
-    .filter(x => Number(x.lastPrice) > 0 && Number(x.quoteVolume) > 0)
-    .map(x => ({
-      symbol: x.symbol,
-      base: x.symbol.slice(0, -4),
-      quote: "USDT",
-      price: Number(x.lastPrice),
-      change24h: Number(x.priceChangePercent),
-      quoteVolume24h: Number(x.quoteVolume),
-      high24h: Number(x.highPrice),
-      low24h: Number(x.lowPrice),
-      trades24h: Number(x.count),
-    }))
-    .sort((a, b) => b.quoteVolume24h - a.quoteVolume24h)
-    .slice(0, limit);
-  return { count: rows.length, universe: "Binance spot USDT pairs", limitation: "این فهرست کل توکن‌های جهان نیست؛ فقط بازارهای USDT اسپات بایننس را پوشش می‌دهد.", updatedAt: new Date().toISOString(), markets: rows };
+  const rows = (Array.isArray(data) ? data : []).filter(x => Number(x.current_price) > 0).map(x => ({
+    id: x.id, symbol: String(x.symbol || "").toUpperCase() + "USDT",
+    base: String(x.symbol || "").toUpperCase(), quote: "USDT",
+    name: x.name || "", image: x.image || null,
+    price: Number(x.current_price),
+    change24h: x.price_change_percentage_24h == null ? null : Number(x.price_change_percentage_24h),
+    quoteVolume24h: x.total_volume == null ? null : Number(x.total_volume),
+    high24h: x.high_24h == null ? null : Number(x.high_24h),
+    low24h: x.low_24h == null ? null : Number(x.low_24h),
+    marketCap: x.market_cap == null ? null : Number(x.market_cap),
+    marketCapRank: x.market_cap_rank == null ? null : Number(x.market_cap_rank),
+    trades24h: null
+  }));
+  return { count: rows.length, universe: "CoinGecko global crypto markets (USD prices labelled as USDT-equivalent display)", source: "CoinGecko Demo API", updatedAt: new Date().toISOString(), markets: rows };
 }
-async function getCandles(url) {
+async function getCandles(url, env) {
   const symbol = (url.searchParams.get("symbol") || "BTCUSDT").toUpperCase();
   const interval = url.searchParams.get("interval") || "1d";
   const allowed = new Set(["1d", "1w", "1M", "4h", "1h"]);
-  if (!/^[A-Z0-9]{5,20}$/.test(symbol) || !allowed.has(interval)) {
-    return json({ error: "نماد یا بازه زمانی نامعتبر است" }, 400);
-  }
-  const limit = Math.max(60, Math.min(1000, Number(url.searchParams.get("limit") || 365)));
-  const upstreamUrl = BINANCE + "/api/v3/klines?symbol=" + encodeURIComponent(symbol) + "&interval=" + interval + "&limit=" + limit;
-  const response = await cachedFetch(upstreamUrl, 60);
+  if (!/^[A-Z0-9]{2,20}$/.test(symbol) || !allowed.has(interval)) return json({ error: "نماد یا بازه زمانی نامعتبر است" }, 400);
+  if (!env || !env.COINGECKO_DEMO_API_KEY) return json({ error: "کلید CoinGecko تنظیم نشده است", source: "CoinGecko Demo API" }, 424);
+  const rawSymbol = symbol.endsWith("USDT") ? symbol.slice(0, -4) : symbol;
+  const searchResponse = await cachedFetch(COINGECKO + "/search?query=" + encodeURIComponent(rawSymbol), 600, cgHeaders(env));
+  const search = await searchResponse.json();
+  const matches = (search.coins || []).filter(x => String(x.symbol || "").toUpperCase() === rawSymbol);
+  if (!matches.length) return json({ symbol, error: "برای این نماد شناسه CoinGecko پیدا نشد" }, 404);
+  const coin = matches.sort((a,b) => (a.market_cap_rank || 999999) - (b.market_cap_rank || 999999))[0];
+  const days = interval === "1h" || interval === "4h" ? "1" : interval === "1w" ? "90" : interval === "1M" ? "365" : "30";
+  const response = await cachedFetch(COINGECKO + "/coins/" + encodeURIComponent(coin.id) + "/ohlc?vs_currency=usd&days=" + days, 120, cgHeaders(env));
   const raw = await response.json();
-  return json({
-    symbol, interval, count: raw.length, updatedAt: new Date().toISOString(),
-    candles: raw.map(k => ({ time: k[0], open: Number(k[1]), high: Number(k[2]), low: Number(k[3]), close: Number(k[4]), volume: Number(k[5]), closeTime: k[6], quoteVolume: Number(k[7]), trades: Number(k[8]) })),
-  });
+  const candles = (Array.isArray(raw) ? raw : []).map(k => ({ time: Number(k[0]), open: Number(k[1]), high: Number(k[2]), low: Number(k[3]), close: Number(k[4]), volume: null, closeTime: null, quoteVolume: null, trades: null }));
+  return json({ symbol, coinId: coin.id, interval, count: candles.length, updatedAt: new Date().toISOString(), source: "CoinGecko OHLC", note: "بازه زمانی کندل‌ها تابع محدودیت‌های API و پارامتر days است؛ حجم کندل در این endpoint ارائه نمی‌شود.", candles });
 }
-async function searchCoins(query) {
+async function searchCoins(query, env) {
   const q = String(query || "").trim().slice(0, 80);
   if (q.length < 1) return { query: q, results: [], source: "CoinGecko public search", updatedAt: new Date().toISOString() };
-  const response = await cachedFetch("https://api.coingecko.com/api/v3/search?query=" + encodeURIComponent(q), 300);
+  const response = await cachedFetch(COINGECKO + "/search?query=" + encodeURIComponent(q), 300, cgHeaders(env));
   const data = await response.json();
   const results = (data.coins || []).slice(0, 20).map(x => ({
     id: x.id, name: x.name, symbol: String(x.symbol || "").toUpperCase(),
@@ -105,10 +106,10 @@ async function searchCoins(query) {
   }));
   return { query: q, count: results.length, results, source: "CoinGecko public search (free endpoint; rate limits may apply)", updatedAt: new Date().toISOString() };
 }
-async function getCoinOverview(id) {
+async function getCoinOverview(id, env) {
   const coinId = String(id || "").trim().slice(0, 100);
   if (!/^[a-z0-9-]+$/i.test(coinId)) throw new Error("شناسه کوین نامعتبر است");
-  const response = await cachedFetch("https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=" + encodeURIComponent(coinId) + "&price_change_percentage=24h,7d,30d", 300);
+  const response = await cachedFetch(COINGECKO + "/coins/markets?vs_currency=usd&ids=" + encodeURIComponent(coinId) + "&price_change_percentage=24h,7d,30d", 300, cgHeaders(env));
   const rows = await response.json();
   const x = Array.isArray(rows) ? rows[0] : null;
   if (!x) return { id: coinId, available: false, source: "CoinGecko public markets", updatedAt: new Date().toISOString() };
@@ -277,13 +278,13 @@ export default {
       if (url.pathname === "/api/health") return json({ status: "ok", service: "crypto-radar-public-data", paidApiKeysRequired: false });
       if (url.pathname === "/api/market") {
         const limit = Math.max(10, Math.min(1000, Number(url.searchParams.get("limit") || 250)));
-        return json(await getMarket(limit));
+        return json(await getMarket(limit, env));
       }
-      if (url.pathname === "/api/candles") return await getCandles(url);
+      if (url.pathname === "/api/candles") return await getCandles(url, env);
       if (url.pathname === "/api/news") return json(await getNews());
       if (url.pathname === "/api/protocols") return json(await getDefiProtocols());
-      if (url.pathname === "/api/search") return json(await searchCoins(url.searchParams.get("q")));
-      if (url.pathname === "/api/coin") return json(await getCoinOverview(url.searchParams.get("id")));
+      if (url.pathname === "/api/search") return json(await searchCoins(url.searchParams.get("q"), env));
+      if (url.pathname === "/api/coin") return json(await getCoinOverview(url.searchParams.get("id"), env));
       if (url.pathname === "/api/derivatives") return await getDerivatives(url, env);
       return json({ error: "Not found", routes: ["/api/health", "/api/market", "/api/candles", "/api/news", "/api/derivatives", "/api/protocols", "/api/search", "/api/coin"] }, 404);
     } catch (error) {
