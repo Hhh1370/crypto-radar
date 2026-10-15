@@ -92,6 +92,33 @@ async function getCandles(url) {
     candles: raw.map(k => ({ time: k[0], open: Number(k[1]), high: Number(k[2]), low: Number(k[3]), close: Number(k[4]), volume: Number(k[5]), closeTime: k[6], quoteVolume: Number(k[7]), trades: Number(k[8]) })),
   });
 }
+async function getDefiProtocols() {
+  const response = await cachedFetch("https://api.llama.fi/protocols", 1800);
+  const rows = await response.json();
+  const valid = rows.filter(x => x && x.symbol && Number(x.tvl) > 0);
+  const bySymbol = new Map();
+  for (const x of valid) {
+    const symbol = String(x.symbol).toUpperCase();
+    if (!/^[A-Z0-9]{2,15}$/.test(symbol)) continue;
+    const arr = bySymbol.get(symbol) || [];
+    arr.push(x);bySymbol.set(symbol, arr);
+  }
+  const protocols = [];
+  const ambiguous = [];
+  for (const [symbol, arr] of bySymbol) {
+    if (arr.length !== 1) { ambiguous.push(symbol); continue; }
+    const x = arr[0];
+    protocols.push({
+      symbol, name: x.name || "", tvl: Number(x.tvl),
+      change1d: x.change_1d == null ? null : Number(x.change_1d),
+      change7d: x.change_7d == null ? null : Number(x.change_7d),
+      marketCap: x.mcap == null ? null : Number(x.mcap),
+      category: x.category || "", chains: Array.isArray(x.chains) ? x.chains.slice(0, 8) : [],
+      url: x.url || ""
+    });
+  }
+  return { source: "DeFiLlama public protocol data", updatedAt: new Date().toISOString(), count: protocols.length, ambiguousSymbols: ambiguous, protocols };
+}
 async function getNews() {
   const settled = await Promise.allSettled(FEEDS.map(async ([source, url]) => {
     const response = await cachedFetch(url, 300);
@@ -213,8 +240,9 @@ export default {
       }
       if (url.pathname === "/api/candles") return await getCandles(url);
       if (url.pathname === "/api/news") return json(await getNews());
+      if (url.pathname === "/api/protocols") return json(await getDefiProtocols());
       if (url.pathname === "/api/derivatives") return await getDerivatives(url, env);
-      return json({ error: "Not found", routes: ["/api/health", "/api/market", "/api/candles", "/api/news", "/api/derivatives"] }, 404);
+      return json({ error: "Not found", routes: ["/api/health", "/api/market", "/api/candles", "/api/news", "/api/derivatives", "/api/protocols"] }, 404);
     } catch (error) {
       return json({ error: error && error.message ? error.message : "upstream unavailable", staleDataAvailable: false }, 502);
     }
