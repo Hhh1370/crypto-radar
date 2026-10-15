@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from concurrent.futures import ThreadPoolExecutor
 import httpx
 from indicators import (
     calculate_rsi, calculate_sma, calculate_ema, calculate_macd,
@@ -31,11 +32,8 @@ def health():
 # ---------- توابع داخلی ----------
 
 def _get_ohlc(coin_id: str, days: int = 365):
-    """OHLCV از Binance"""
     if coin_id not in COINS:
-        raise httpx.HTTPStatusError(
-            f"Coin {coin_id} not in mapping", request=None, response=None
-        )
+        raise Exception(f"Coin {coin_id} not in mapping")
     _, _, binance_symbol, _ = COINS[coin_id]
 
     url = f"{BINANCE}/klines"
@@ -55,11 +53,8 @@ def _get_ohlc(coin_id: str, days: int = 365):
 
 
 def _get_coin_info(coin_id: str):
-    """اطلاعات ارز از CoinPaprika + Binance"""
     if coin_id not in COINS:
-        raise httpx.HTTPStatusError(
-            f"Coin {coin_id} not in mapping", request=None, response=None
-        )
+        raise Exception(f"Coin {coin_id} not in mapping")
     symbol, name, binance_symbol, paprika_id = COINS[coin_id]
 
     categories = []
@@ -356,6 +351,90 @@ def _fundamental_score(coin_data: dict):
     }
 
 
+def _build_signal(coin_id: str, hours: int = 48):
+    """ساخت سیگنال ترکیبی برای یک ارز (کمکی برای /signals/all)"""
+    try:
+        info = _get_coin_info(coin_id)
+    except Exception as e:
+        return {"coin": coin_id, "error": str(e)[:80], "combined_signal": 0}
+
+    symbol = info.get("symbol", "").upper()
+    name = info.get("name", "")
+
+    try:
+        ohlc = _get_ohlc(coin_id)
+        tech = _technical_score(ohlc)
+        current_price = round(ohlc["closes"][-1], 2)
+    except Exception as e:
+        tech = {"score": 0, "signals": [f"err: {str(e)[:50]}"]}
+        current_price = 0
+
+    fund = _fundamental_score(info)
+
+    try:
+        news_items = get_news_by_coin(symbol, hours=hours)
+    except Exception:
+        news_items = []
+
+    sources_set = sorted(set(n["source"] for n in news_items))
+    sources_count = len(sources_set)
+    news_count = len(news_items)
+
+    news_score = min(100, sources_count * 20)
+    if news_count >= 10:
+        news_score = min(100, news_score + 20)
+    elif news_count >= 5:
+        news_score = min(100, news_score + 10)
+
+    combined = round(
+        tech["score"] * 0.5 + fund["score"] * 0.2 + news_score * 0.3, 1
+    )
+
+    if combined >= 80:
+        verdict = "سیگنال بسیار قوی"
+    elif combined >= 60:
+        verdict = "سیگنال قوی"
+    elif combined >= 40:
+        verdict = "سیگنال متوسط"
+    elif combined >= 20:
+        verdict = "سیگنال ضعیف"
+    else:
+        verdict = "بدون سیگنال"
+
+    return {
+        "coin": coin_id,
+        "symbol": symbol,
+        "name": name,
+        "current_price": current_price,
+        "combined_signal": combined,
+        "verdict": verdict,
+        "breakdown": {
+            "technical": {
+                "score": tech["score"],
+                "weight": 0.5,
+                "signals": tech["signals"],
+            },
+            "fundamental": {
+                "score": fund["score"],
+                "weight": 0.2,
+                "signals": fund["signals"],
+                "sectors": fund["sectors"],
+            },
+            "news": {
+                "score": news_score,
+                "weight": 0.3,
+                "sources_count": sources_count,
+                "sources": sources_set,
+                "news_count": news_count,
+                "top_titles": [
+                    {"title": n["title"], "source": n["source"], "link": n["link"]}
+                    for n in news_items[:3]
+                ],
+            },
+        },
+    }
+
+
 # ---------- اندپوینت‌ها ----------
 
 @app.get("/analyze/{coin_id}")
@@ -414,15 +493,15 @@ def analyze_full(coin_id: str):
     combined = (tech["score"] * 0.6) + (fund["score"] * 0.4)
 
     if combined >= 80:
-        verdict = "بسیار قوی 🟢🟢"
+        verdict = "بسیار قوی"
     elif combined >= 60:
-        verdict = "قوی 🟢"
+        verdict = "قوی"
     elif combined >= 40:
-        verdict = "متوسط 🟡"
+        verdict = "متوسط"
     elif combined >= 20:
-        verdict = "ضعیف 🔴"
+        verdict = "ضعیف"
     else:
-        verdict = "بسیار ضعیف 🔴🔴"
+        verdict = "بسیار ضعیف"
 
     return {
         "coin": coin_id,
@@ -493,86 +572,19 @@ def news_by_coin(symbol: str, hours: int = 48):
 
 @app.get("/signal/{coin_id}")
 def get_signal(coin_id: str, hours: int = 48):
-    try:
-        info = _get_coin_info(coin_id)
-    except Exception as e:
-        raise HTTPException(404, f"coin error: {str(e)[:50]}")
+    return _build_signal(coin_id, hours=hours)
 
-    symbol = info.get("symbol", "").upper()
-    name = info.get("name", "")
 
-    try:
-        ohlc = _get_ohlc(coin_id)
-        tech = _technical_score(ohlc)
-        current_price = round(ohlc["closes"][-1], 2)
-    except Exception as e:
-        tech = {"score": 0, "signals": [f"err: {str(e)[:50]}"]}
-        current_price = 0
+@app.get("/signals/all")
+def get_all_signals(hours: int = 48):
+    """گرفتن سیگنال ۳ ارز به صورت موازی (سریع‌تر)"""
+    watchlist = ["bitcoin", "ethereum", "solana"]
 
-    fund = _fundamental_score(info)
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        results = list(executor.map(lambda c: _build_signal(c, hours=hours), watchlist))
 
-    try:
-        news_items = get_news_by_coin(symbol, hours=hours)
-    except Exception:
-        news_items = []
-
-    sources_set = sorted(set(n["source"] for n in news_items))
-    sources_count = len(sources_set)
-    news_count = len(news_items)
-
-    news_score = min(100, sources_count * 20)
-    if news_count >= 10:
-        news_score = min(100, news_score + 20)
-    elif news_count >= 5:
-        news_score = min(100, news_score + 10)
-
-    combined = round(
-        tech["score"] * 0.5 + fund["score"] * 0.2 + news_score * 0.3, 1
-    )
-
-    if combined >= 80:
-        verdict = "سیگنال بسیار قوی 🟢🟢"
-    elif combined >= 60:
-        verdict = "سیگنال قوی 🟢"
-    elif combined >= 40:
-        verdict = "سیگنال متوسط 🟡"
-    elif combined >= 20:
-        verdict = "سیگنال ضعیف 🔴"
-    else:
-        verdict = "بدون سیگنال 🔴🔴"
-
-    return {
-        "coin": coin_id,
-        "symbol": symbol,
-        "name": name,
-        "current_price": current_price,
-        "combined_signal": combined,
-        "verdict": verdict,
-        "breakdown": {
-            "technical": {
-                "score": tech["score"],
-                "weight": 0.5,
-                "signals": tech["signals"],
-            },
-            "fundamental": {
-                "score": fund["score"],
-                "weight": 0.2,
-                "signals": fund["signals"],
-                "sectors": fund["sectors"],
-            },
-            "news": {
-                "score": news_score,
-                "weight": 0.3,
-                "sources_count": sources_count,
-                "sources": sources_set,
-                "news_count": news_count,
-                "top_titles": [
-                    {"title": n["title"], "source": n["source"], "link": n["link"]}
-                    for n in news_items[:3]
-                ],
-            },
-        },
-    }
+    results.sort(key=lambda x: x.get("combined_signal", 0), reverse=True)
+    return {"count": len(results), "signals": results}
 
 
 # ---------- UI ----------
