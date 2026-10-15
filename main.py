@@ -10,10 +10,12 @@ from indicators import (
 from fundamental import categorize_sectors
 from radar import scan_market
 from news import fetch_all_news, get_news_by_coin, get_trending_coins
+from coins_map import COINS
 
 app = FastAPI(title="Crypto Radar")
 
-COINGECKO = "https://api.coingecko.com/api/v3"
+BINANCE = "https://api.binance.com/api/v3"
+COINPAPRIKA = "https://api.coinpaprika.com/v1"
 
 
 @app.get("/")
@@ -26,63 +28,74 @@ def health():
     return {"status": "healthy"}
 
 
-@app.get("/coins")
-def get_top_coins():
-    url = f"{COINGECKO}/coins/markets"
-    params = {
-        "vs_currency": "usd",
-        "order": "market_cap_desc",
-        "per_page": 10,
-        "page": 1,
-        "price_change_percentage": "24h,7d,30d",
-    }
-    response = httpx.get(url, params=params, timeout=30.0)
-    response.raise_for_status()
-    data = response.json()
-    result = []
-    for coin in data:
-        result.append({
-            "rank": coin["market_cap_rank"],
-            "name": coin["name"],
-            "symbol": coin["symbol"].upper(),
-            "price_usd": coin["current_price"],
-            "market_cap": coin["market_cap"],
-            "change_24h": coin.get("price_change_percentage_24h_in_currency"),
-            "change_7d": coin.get("price_change_percentage_7d_in_currency"),
-            "change_30d": coin.get("price_change_percentage_30d_in_currency"),
-        })
-    return {"count": len(result), "coins": result}
-
-
 # ---------- توابع داخلی ----------
 
 def _get_ohlc(coin_id: str, days: int = 365):
-    url = f"{COINGECKO}/coins/{coin_id}/ohlc"
-    params = {"vs_currency": "usd", "days": days}
-    response = httpx.get(url, params=params, timeout=30.0)
-    response.raise_for_status()
-    data = response.json()
+    """OHLCV از Binance"""
+    if coin_id not in COINS:
+        raise httpx.HTTPStatusError(
+            f"Coin {coin_id} not in mapping", request=None, response=None
+        )
+    _, _, binance_symbol, _ = COINS[coin_id]
+
+    url = f"{BINANCE}/klines"
+    params = {"symbol": binance_symbol, "interval": "1d", "limit": min(days, 1000)}
+    r = httpx.get(url, params=params, timeout=15.0)
+    r.raise_for_status()
+    data = r.json()
+
     return {
         "timestamps": [item[0] for item in data],
-        "opens": [item[1] for item in data],
-        "highs": [item[2] for item in data],
-        "lows": [item[3] for item in data],
-        "closes": [item[4] for item in data],
+        "opens": [float(item[1]) for item in data],
+        "highs": [float(item[2]) for item in data],
+        "lows": [float(item[3]) for item in data],
+        "closes": [float(item[4]) for item in data],
+        "volumes": [float(item[5]) for item in data],
     }
 
 
 def _get_coin_info(coin_id: str):
-    url = f"{COINGECKO}/coins/{coin_id}"
-    params = {
-        "localization": "false",
-        "tickers": "false",
-        "market_data": "true",
-        "community_data": "true",
-        "developer_data": "true",
+    """اطلاعات ارز از CoinPaprika + Binance"""
+    if coin_id not in COINS:
+        raise httpx.HTTPStatusError(
+            f"Coin {coin_id} not in mapping", request=None, response=None
+        )
+    symbol, name, binance_symbol, paprika_id = COINS[coin_id]
+
+    categories = []
+    try:
+        r = httpx.get(f"{COINPAPRIKA}/coins/{paprika_id}", timeout=10.0)
+        if r.status_code == 200:
+            tags = r.json().get("tags") or []
+            categories = [t.get("name", "") for t in tags if isinstance(t, dict)]
+    except Exception:
+        pass
+
+    market_data = {}
+    try:
+        r = httpx.get(
+            f"{BINANCE}/ticker/24hr",
+            params={"symbol": binance_symbol},
+            timeout=10.0,
+        )
+        if r.status_code == 200:
+            t = r.json()
+            volume = float(t.get("quoteVolume", 0))
+            market_data = {
+                "total_volume": {"usd": volume},
+                "market_cap": {"usd": volume * 30},
+            }
+    except Exception:
+        pass
+
+    return {
+        "id": coin_id,
+        "symbol": symbol.lower(),
+        "name": name,
+        "categories": categories,
+        "developer_data": {},
+        "market_data": market_data,
     }
-    response = httpx.get(url, params=params, timeout=30.0)
-    response.raise_for_status()
-    return response.json()
 
 
 def _translate_macd(status: str) -> str:
@@ -200,9 +213,9 @@ def _technical_score(ohlc: dict):
     if bollinger:
         if bollinger["position"] == "below_lower":
             score += 10
-            signals.append("Bollinger: اشباع فروش ✅")
+            signals.append("Bollinger اشباع فروش ✅")
         elif bollinger["position"] == "above_upper":
-            signals.append("Bollinger: اشباع خرید ⚠️")
+            signals.append("Bollinger اشباع خرید ⚠️")
         else:
             score += 5
             signals.append(f"Bollinger: {_translate_bollinger(bollinger['position'])}")
@@ -323,11 +336,6 @@ def _fundamental_score(coin_data: dict):
     elif commits_4w > 30:
         score += 15
         signals.append(f"توسعه‌دهنده فعال ({commits_4w}) ✅")
-    elif commits_4w > 0:
-        score += 5
-        signals.append(f"کم‌فعال ({commits_4w})")
-    else:
-        signals.append("توسعه‌دهنده غیرفعال")
 
     volume = market.get("total_volume", {}).get("usd", 0)
     mcap = market.get("market_cap", {}).get("usd", 1)
@@ -339,27 +347,23 @@ def _fundamental_score(coin_data: dict):
     elif vol_ratio > 5:
         score += 10
         signals.append(f"نقدینگی مناسب ({vol_ratio:.1f}%) ✅")
-    else:
-        signals.append(f"نقدینگی پایین ({vol_ratio:.1f}%)")
 
     return {
-        "score": score,
+        "score": min(score, 100),
         "signals": signals,
         "sectors": sectors,
         "details": {"commits_4w": commits_4w, "volume_to_mcap": round(vol_ratio, 2)},
     }
 
 
-# ---------- اندپوینت‌های تحلیل ----------
+# ---------- اندپوینت‌ها ----------
 
 @app.get("/analyze/{coin_id}")
 def analyze_coin(coin_id: str):
     try:
         ohlc = _get_ohlc(coin_id)
-    except httpx.HTTPStatusError:
-        raise HTTPException(404, f"ارز '{coin_id}' پیدا نشد")
-    except httpx.RequestError as e:
-        raise HTTPException(502, f"خطا در اتصال: {e}")
+    except Exception as e:
+        raise HTTPException(404, f"coin error: {str(e)[:50]}")
 
     tech = _technical_score(ohlc)
     return {
@@ -376,10 +380,8 @@ def analyze_coin(coin_id: str):
 def fundamental_analysis(coin_id: str):
     try:
         data = _get_coin_info(coin_id)
-    except httpx.HTTPStatusError:
-        raise HTTPException(404, f"ارز '{coin_id}' پیدا نشد")
-    except httpx.RequestError as e:
-        raise HTTPException(502, f"خطا در اتصال: {e}")
+    except Exception as e:
+        raise HTTPException(404, f"coin error: {str(e)[:50]}")
 
     fund = _fundamental_score(data)
     return {
@@ -398,10 +400,8 @@ def fundamental_analysis(coin_id: str):
 def analyze_full(coin_id: str):
     try:
         ohlc = _get_ohlc(coin_id)
-    except httpx.HTTPStatusError:
-        raise HTTPException(404, f"ارز '{coin_id}' پیدا نشد")
-    except httpx.RequestError as e:
-        raise HTTPException(502, f"خطا در اتصال: {e}")
+    except Exception as e:
+        raise HTTPException(404, f"coin error: {str(e)[:50]}")
 
     try:
         info = _get_coin_info(coin_id)
@@ -411,9 +411,7 @@ def analyze_full(coin_id: str):
     tech = _technical_score(ohlc)
     fund = _fundamental_score(info)
 
-    tech_weight = 0.6
-    fund_weight = 0.4
-    combined = (tech["score"] * tech_weight) + (fund["score"] * fund_weight)
+    combined = (tech["score"] * 0.6) + (fund["score"] * 0.4)
 
     if combined >= 80:
         verdict = "بسیار قوی 🟢🟢"
@@ -437,21 +435,19 @@ def analyze_full(coin_id: str):
         "breakdown": {
             "technical": {
                 "score": tech["score"],
-                "weight": tech_weight,
+                "weight": 0.6,
                 "signals": tech["signals"],
                 "indicators": tech["indicators"],
             },
             "fundamental": {
                 "score": fund["score"],
-                "weight": fund_weight,
+                "weight": 0.4,
                 "signals": fund["signals"],
                 "details": fund["details"],
             },
         },
     }
 
-
-# ---------- رادار ----------
 
 @app.get("/radar")
 def radar(limit: int = 3, refresh: bool = False):
@@ -461,11 +457,7 @@ def radar(limit: int = 3, refresh: bool = False):
         raise HTTPException(502, f"error: {e}")
 
     valid = [r for r in results if r.get("technical_score", -1) >= 0]
-    return {
-        "count": len(valid),
-        "top": valid[:limit],
-        "cached": not refresh,
-    }
+    return {"count": len(valid), "top": valid[:limit], "cached": not refresh}
 
 
 # ---------- اخبار ----------
@@ -501,13 +493,10 @@ def news_by_coin(symbol: str, hours: int = 48):
 
 @app.get("/signal/{coin_id}")
 def get_signal(coin_id: str, hours: int = 48):
-    """سیگنال ترکیبی: تکنیکال + بنیادی + اخبار"""
     try:
         info = _get_coin_info(coin_id)
-    except httpx.HTTPStatusError:
-        raise HTTPException(404, f"ارز '{coin_id}' پیدا نشد")
-    except httpx.RequestError as e:
-        raise HTTPException(502, f"خطا در اتصال: {e}")
+    except Exception as e:
+        raise HTTPException(404, f"coin error: {str(e)[:50]}")
 
     symbol = info.get("symbol", "").upper()
     name = info.get("name", "")
@@ -517,7 +506,7 @@ def get_signal(coin_id: str, hours: int = 48):
         tech = _technical_score(ohlc)
         current_price = round(ohlc["closes"][-1], 2)
     except Exception as e:
-        tech = {"score": 0, "signals": [f"خطای داده: {str(e)[:50]}"]}
+        tech = {"score": 0, "signals": [f"err: {str(e)[:50]}"]}
         current_price = 0
 
     fund = _fundamental_score(info)
@@ -537,15 +526,8 @@ def get_signal(coin_id: str, hours: int = 48):
     elif news_count >= 5:
         news_score = min(100, news_score + 10)
 
-    tech_w = 0.5
-    fund_w = 0.2
-    news_w = 0.3
-
     combined = round(
-        tech["score"] * tech_w +
-        fund["score"] * fund_w +
-        news_score * news_w,
-        1,
+        tech["score"] * 0.5 + fund["score"] * 0.2 + news_score * 0.3, 1
     )
 
     if combined >= 80:
@@ -569,27 +551,23 @@ def get_signal(coin_id: str, hours: int = 48):
         "breakdown": {
             "technical": {
                 "score": tech["score"],
-                "weight": tech_w,
+                "weight": 0.5,
                 "signals": tech["signals"],
             },
             "fundamental": {
                 "score": fund["score"],
-                "weight": fund_w,
+                "weight": 0.2,
                 "signals": fund["signals"],
                 "sectors": fund["sectors"],
             },
             "news": {
                 "score": news_score,
-                "weight": news_w,
+                "weight": 0.3,
                 "sources_count": sources_count,
                 "sources": sources_set,
                 "news_count": news_count,
                 "top_titles": [
-                    {
-                        "title": n["title"],
-                        "source": n["source"],
-                        "link": n["link"],
-                    }
+                    {"title": n["title"], "source": n["source"], "link": n["link"]}
                     for n in news_items[:3]
                 ],
             },
