@@ -113,8 +113,99 @@ async function getNews() {
   const failedSources = settled.map((r, i) => r.status === "rejected" ? FEEDS[i][0] : null).filter(Boolean);
   return { count: news.length, sources: FEEDS.length - failedSources.length, failedSources, updatedAt: new Date().toISOString(), news };
 }
+
+async function safeJson(url, ttl = 45, headers = {}) {
+  try {
+    const response = await cachedFetch(url, ttl);
+    return await response.json();
+  } catch (error) {
+    return { _error: error && error.message ? error.message : "source unavailable" };
+  }
+}
+async function getDerivatives(url, env) {
+  const symbol = (url.searchParams.get("symbol") || "BTCUSDT").toUpperCase();
+  if (!/^[A-Z0-9]{5,20}$/.test(symbol) || !symbol.endsWith("USDT")) {
+    return json({ error: "نماد مشتقه باید جفت USDT معتبر باشد" }, 400);
+  }
+  const base = symbol.slice(0, -4);
+  const source = (url.searchParams.get("source") || "binance").toLowerCase();
+  if (source === "coinglass") {
+    if (!env || !env.COINGLASS_API_KEY) {
+      return json({ error: "کلید CoinGlass تنظیم نشده است؛ در Cloudflare به Worker Settings > Variables and Secrets آن را با نام COINGLASS_API_KEY به صورت Secret اضافه کن.", source: "coinglass", available: false }, 424);
+    }
+    const headers = { "CG-API-KEY": env.COINGLASS_API_KEY, "Accept": "application/json" };
+    const root = "https://open-api-v4.coinglass.com";
+    const [oi, funding] = await Promise.all([
+      safeJson(root + "/api/futures/open-interest/exchange-list?symbol=" + encodeURIComponent(base), 30, headers),
+      safeJson(root + "/api/futures/funding-rate/exchange-list?symbol=" + encodeURIComponent(base), 30, headers),
+    ]);
+    // safeJson's generic cache helper cannot attach authorization headers, so perform the
+    // authenticated requests directly; the key is only ever used server-side.
+    async function cg(path) {
+      try {
+        const cacheKey = new Request("https://crypto-radar-cg-cache.invalid/" + encodeURIComponent(base) + "/" + path.split("?")[0]);
+        const cache = caches.default;
+        const cached = await cache.match(cacheKey);
+        if (cached) return await cached.json();
+        const res = await fetch(root + path, { headers, signal: AbortSignal.timeout(10000) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || data.code && String(data.code) !== "0") return { _error: data.msg || ("HTTP " + res.status) };
+        const copy = new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json", "Cache-Control": "public, max-age=30" } });
+        await cache.put(cacheKey, copy);
+        return data;
+      } catch (e) { return { _error: e.message || "CoinGlass unavailable" }; }
+    }
+    const [oiData, fundingData] = await Promise.all([
+      cg("/api/futures/open-interest/exchange-list?symbol=" + encodeURIComponent(base)),
+      cg("/api/futures/funding-rate/exchange-list?symbol=" + encodeURIComponent(base)),
+    ]);
+    const oiRows = Array.isArray(oiData.data) ? oiData.data : [];
+    const fundingRows = Array.isArray(fundingData.data) ? fundingData.data : [];
+    const totalOi = oiRows.find(x => x.exchange === "All") || null;
+    const rates = fundingRows.flatMap(x => [...(x.stablecoin_margin_list || []), ...(x.token_margin_list || [])]).filter(x => Number.isFinite(Number(x.funding_rate)));
+    return json({ symbol, source: "CoinGlass", updatedAt: new Date().toISOString(), available: Boolean(totalOi || rates.length), openInterestUsd: totalOi ? Number(totalOi.open_interest_usd) : null, funding: rates.slice(0, 12), errors: [oiData._error, fundingData._error].filter(Boolean), note: "پوشش و محدودیت درخواست تابع پلن CoinGlass است." });
+  }
+  const root = "https://fapi.binance.com";
+  const urls = {
+    currentOi: root + "/fapi/v1/openInterest?symbol=" + symbol,
+    oiHistory: root + "/futures/data/openInterestHist?symbol=" + symbol + "&period=1h&limit=24",
+    funding: root + "/fapi/v1/fundingRate?symbol=" + symbol + "&limit=10",
+    longShort: root + "/futures/data/globalLongShortAccountRatio?symbol=" + symbol + "&period=1h&limit=24",
+    taker: root + "/futures/data/takerlongshortRatio?symbol=" + symbol + "&period=1h&limit=24"
+  };
+  const keys = Object.keys(urls);
+  const vals = await Promise.all(keys.map(k => safeJson(urls[k], k === "currentOi" ? 20 : 60)));
+  const data = Object.fromEntries(keys.map((k, i) => [k, vals[i]]));
+  const oi = data.currentOi && !data.currentOi._error ? Number(data.currentOi.openInterest) : null;
+  const oiSeries = Array.isArray(data.oiHistory) ? data.oiHistory : [];
+  const lsSeries = Array.isArray(data.longShort) ? data.longShort : [];
+  const takerSeries = Array.isArray(data.taker) ? data.taker : [];
+  const fundSeries = Array.isArray(data.funding) ? data.funding : [];
+  const last = a => a.length ? a[a.length - 1] : null;
+  const first = a => a.length ? a[0] : null;
+  const oiFirst = first(oiSeries), oiLast = last(oiSeries);
+  const oiChangePct = oiFirst && oiLast && Number(oiFirst.sumOpenInterestValue) ? (Number(oiLast.sumOpenInterestValue) / Number(oiFirst.sumOpenInterestValue) - 1) * 100 : null;
+  const l = last(lsSeries), t = last(takerSeries), f = last(fundSeries);
+  return json({
+    symbol, source: "Binance USDⓈ-M Futures public endpoints", updatedAt: new Date().toISOString(),
+    available: Boolean(oi !== null || l || t || f),
+    openInterestContracts: oi,
+    openInterestUsdApprox: oiLast && oiLast.sumOpenInterestValue != null ? Number(oiLast.sumOpenInterestValue) : null,
+    openInterestChange24hPct: oiChangePct,
+    fundingRate: f ? Number(f.fundingRate) : null,
+    fundingHistory: fundSeries.map(x => ({ time: x.fundingTime, rate: Number(x.fundingRate) })),
+    globalLongShortRatio: l ? Number(l.longShortRatio) : null,
+    longAccountPct: l ? Number(l.longAccount) * 100 : null,
+    shortAccountPct: l ? Number(l.shortAccount) * 100 : null,
+    takerBuySellRatio: t ? Number(t.buySellRatio) : null,
+    historyPoints: { openInterest: oiSeries.length, longShort: lsSeries.length, taker: takerSeries.length, funding: fundSeries.length },
+    errors: Object.entries(data).filter(([, v]) => v && v._error).map(([k, v]) => ({ source: k, error: v._error })),
+    note: "داده مشتقات فقط برای جفت‌های دارای قرارداد فیوچرز بایننس موجود است؛ نسبت لانگ/شورت رفتار حساب‌هاست، نه تضمین جهت قیمت."
+  });
+}
+
 export default {
-  async fetch(request) {
+  async fetch(request, env) {
     const url = new URL(request.url);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
     if (request.method !== "GET") return json({ error: "Only GET is supported" }, 405);
@@ -126,7 +217,8 @@ export default {
       }
       if (url.pathname === "/api/candles") return await getCandles(url);
       if (url.pathname === "/api/news") return json(await getNews());
-      return json({ error: "Not found", routes: ["/api/health", "/api/market", "/api/candles", "/api/news"] }, 404);
+      if (url.pathname === "/api/derivatives") return await getDerivatives(url, env);
+      return json({ error: "Not found", routes: ["/api/health", "/api/market", "/api/candles", "/api/news", "/api/derivatives"] }, 404);
     } catch (error) {
       return json({ error: error && error.message ? error.message : "upstream unavailable", staleDataAvailable: false }, 502);
     }
